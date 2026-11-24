@@ -30,4 +30,27 @@ t("import reads price currency; ETFs get the right kind",function(){
   var p=I.parseHoldings("Account Name,Symbol,Name,Quantity,Book Value (CAD),Market Price,Market Price Currency\nTFSA,AAPL,Apple,10,2500,228.5,USD\nTFSA,VFV,Vanguard,4,520,152.3,CAD");
   assert.strictEqual(p.rows[0].cur,"USD");assert.strictEqual(I.guessClass("VFV","CAD"),"us");assert.strictEqual(I.guessClass("XEQT.TO","CAD"),"global");assert.strictEqual(I.guessClass("RY.TO","CAD"),"ca");
 });
+t("symbol candidates",function(){
+  assert.deepStrictEqual(I.candidates("XEQT","CAD"),["XEQT.TO","XEQT.NE","XEQT"]);
+  assert.deepStrictEqual(I.candidates("xeqt.to","CAD"),["XEQT.TO"]);
+  assert.deepStrictEqual(I.candidates("RCI.B","CAD"),["RCI-B.TO","RCI-B.NE","RCI-B"]);
+  assert.deepStrictEqual(I.candidates("BRK.B","USD"),["BRK-B","BRK-B.TO"]);
+  assert.deepStrictEqual(I.candidates("BTC","CAD","crypto"),["BTC-CAD","BTC-USD"]);
+});
+t("prices apply on the phone, by currency, without overriding newer typed prices",function(){
+  var st=I.clean({usdcad:1.38,accounts:[{id:"a",name:"T",type:"tfsa",holdings:[
+    {id:"1",sym:"XEQT",units:10,cost:300,price:30,priceAt:"2026-11-01",cur:"CAD"},
+    {id:"2",sym:"AAPL",units:2,cost:400,price:200,priceAt:"",cur:"USD"},
+    {id:"3",sym:"TD",units:5,cost:400,price:90,priceAt:"2026-11-30",cur:"CAD"},
+    {id:"4",sym:"SHOP",units:1,cost:100,price:100,priceAt:"",cur:"CAD"},
+    {id:"5",sym:"ZZZZ",units:1,cost:1,price:1,priceAt:"",cur:"CAD"}]}]});
+  var f={d:"2026-11-24",fx:{USDCAD:1.4012},p:{"XEQT.TO":[36.5,"C"],"AAPL":[230,"U"],"TD.TO":[95,"C"],"TD":[68,"U"],"SHOP":[150,"U"],"SHOP.TO":[210,"C"]}};
+  var r=I.applyPrices(st,f),h=st.accounts[0].holdings;
+  assert.strictEqual(h[0].price,36.5);assert.strictEqual(h[0].priceAt,"2026-11-24");
+  assert.strictEqual(h[1].price,230);
+  assert.strictEqual(h[2].price,90,"typed later stays");
+  assert.strictEqual(h[3].price,210,"CAD holding gets the TSX listing");
+  assert.deepStrictEqual(r.unmatched,["ZZZZ"]);assert.strictEqual(r.updated,3);assert.strictEqual(st.usdcad,1.4012);assert.ok(r.fx);
+  var r2=I.applyPrices(st,f);assert.strictEqual(r2.updated,0,"idempotent");
+});
 console.log(n+" tests passed");

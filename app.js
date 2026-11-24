@@ -3,6 +3,18 @@
    Storage, sign-in, the Pixora passcode and encrypted sync come from pixora-kit.js.
    This app tracks; it doesn't advise. Room numbers start from what your CRA account shows. */
 var I=InvestCore,K=PixoraKit,esc=K.esc;
+var priceFile=null,priceT=0;
+/* Daily closing prices (see tools/prices.py): the whole file comes down and is matched here on the phone. */
+async function refreshPrices(force){
+  if(!S||!S.autoPrices||!S.accounts.length)return;
+  if(!force&&Date.now()-priceT<30*60e3)return;priceT=Date.now();
+  try{var r=await fetch("prices.json",{cache:"no-cache"});if(!r.ok)return;priceFile=await r.json();}catch(e){return;}
+  var res=I.applyPrices(S,priceFile);
+  if(res.updated||res.fx){save();K.track("prices_auto");}
+  if(!$("#dlg").open)render();
+  return res;
+}
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")refreshPrices();});
 var S=null,tab="overview",openAcct=null,importRows=null,importTo=null;
 var TYPE={},CLS={};I.TYPES.forEach(function(t){TYPE[t[0]]=t[1];});I.CLASSES.forEach(function(c){CLS[c[0]]=c[1];});
 var CLSCOL={ca:"#c0392b",us:"#1f4fa8",intl:"#7d3cb8",global:"#0f8a8a",bond:"#2e8b57",cash:"#8a8f98",crypto:"#d4a017",other:"#5f6b7a"};
@@ -44,6 +56,7 @@ function overview(){
     '<p class="note">Nothing here is connected to your broker or bank. It only knows what you enter, and it\'s encrypted before it leaves this phone.</p></div>';
   h+='<section class="card"><p class="eyebrow">Total value</p><p class="big">'+money(t.value)+'</p>'+
     '<p class="'+(t.gain>=0?"pos":"neg")+'" style="font-weight:600">'+(t.gain>=0?"+":"")+money(t.gain)+' ('+pct(t.gainPct)+') vs what you paid</p>'+spark()+
+    (priceFile&&S.autoPrices?'<p class="note">Prices from the '+esc(new Date(priceFile.d+"T12:00:00").toLocaleDateString("en-CA",{month:"short",day:"numeric"}))+' close, updated automatically.</p>':"")+
     (t.stale?'<p class="note">'+t.stale+' price'+(t.stale===1?" is":"s are")+' over a week old. <button class="add" data-act="tab" data-t="accounts">Update prices</button></p>':"")+'</section>';
   var cls=Object.keys(t.byClass).filter(function(k){return t.byClass[k]>0;}).sort(function(a,b){return t.byClass[b]-t.byClass[a];});
   if(cls.length){
@@ -69,7 +82,7 @@ function accounts(){
       ln("Value",money(at.value))+ln("Gain",(g>=0?"+":"")+money(g)+(at.cost?" ("+pct(100*g/at.cost)+")":""),g>=0?"pos":"neg");
     a.holdings.slice().sort(function(x,y){return I.hValue(y,S.usdcad)-I.hValue(x,S.usdcad);}).forEach(function(x){
       var v=I.hValue(x,S.usdcad),c=x.cost,gg=v-c;
-      h+='<div class="hold" data-act="hold" data-a="'+a.id+'" data-id="'+x.id+'"><span><b>'+esc(x.sym||x.name)+'</b> <span class="note">'+esc(x.sym?x.name:"")+'</span><br><span class="note">'+x.units+' × '+(x.cur==="USD"?"US$":"$")+x.price+(x.priceAt?" · "+esc(x.priceAt):"")+'</span></span>'+
+      h+='<div class="hold" data-act="hold" data-a="'+a.id+'" data-id="'+x.id+'"><span><b>'+esc(x.sym||x.name)+'</b> <span class="note">'+esc(x.sym?x.name:"")+'</span><br><span class="note">'+x.units+' × '+(x.cur==="USD"?"US$":"$")+x.price+(x.priceAt?" · "+esc(x.priceAt):"")+(x.auto?" · auto":"")+'</span></span>'+
         '<span class="v">'+money(v)+'<br><span class="small '+(gg>=0?"pos":"neg")+'">'+(gg>=0?"+":"")+money(gg)+'</span></span></div>';
     });
     if(a.cashBal)h+=ln("Cash in account",money(a.cashBal*(a.cur==="USD"?S.usdcad:1)));
@@ -99,6 +112,8 @@ function roomView(){
 }
 function settings(){
   var h='<button class="btn q s" data-act="tab" data-t="overview" style="align-self:flex-start">← Back</button><h1>Settings</h1>';
+  h+='<section class="card"><h2>Automatic prices</h2><p class="note">Each weekday evening Pixora saves closing prices for popular Canadian and US stocks, ETFs and crypto in one public file. Your phone downloads the whole file and matches your holdings itself, so nobody, not even Pixora, learns what you own. Holdings it can\'t match keep the price you type.</p>'+
+    '<label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-act="autoprices"'+(S.autoPrices?" checked":"")+'> Update prices and the US dollar rate automatically</label></section>';
   h+='<section class="card"><h2>US dollar rate</h2><p class="note">Used to show US holdings in Canadian dollars. Update it now and then.</p><div class="row"><input type="text" inputmode="decimal" id="usd" value="'+S.usdcad+'" style="width:120px"><span class="note">CAD per 1 USD</span><button class="btn q s" data-act="saveusd">Save</button></div></section>';
   h+='<section class="card"><h2>Your copy</h2><p class="small muted">Download everything in Investments as a file you keep, and bring it back here or on a new phone. It\'s a plain file, not encrypted, so keep it somewhere private.</p><div class="row"><button class="btn" data-act="export">Download a copy</button><label class="btn q" style="cursor:pointer">Restore from a copy<input type="file" id="restore" accept=".json,application/json" hidden></label></div></section>';
   h+='<section class="card"><h2>Ideas or problems?</h2><p class="small muted">Tell Sachin what would make Investments better or what went wrong. Nothing from your data is sent.</p><div class="row"><button class="btn" data-act="feedback">Send feedback</button></div></section>';
@@ -132,7 +147,7 @@ function holdDialog(a,x){
 function pricesDialog(){
   var rows=[];S.accounts.forEach(function(a){a.holdings.forEach(function(x){rows.push([a,x]);});});
   if(!rows.length){toast("Add holdings first.");return;}
-  dlg('<h2>Update prices</h2><p class="note">Type today\'s price for each. Same symbol in several accounts updates together.</p>'+
+  dlg('<h2>Update prices</h2>'+(S.autoPrices?'<div class="row"><button class="btn p" data-act="getprices">Get the latest closing prices</button></div><p class="note">':'<p class="note">')+'Type today\'s price for each. Same symbol in several accounts updates together.</p>'+
     rows.filter(function(r,i){return rows.findIndex(function(q){return (q[1].sym||q[1].name)===(r[1].sym||r[1].name);})===i;}).map(function(r){var x=r[1];
       return '<label class="f">'+esc(x.sym||x.name)+' <small>last '+(x.cur==="USD"?"US$":"$")+x.price+(x.priceAt?" on "+esc(x.priceAt):"")+'</small><input type="text" inputmode="decimal" data-psym="'+esc(x.sym||x.name)+'" placeholder="'+x.price+'"></label>';}).join("")+
     '<div class="row"><button class="btn p" data-act="saveprices">Save prices</button><button class="btn q" data-act="close">Cancel</button></div>');
@@ -153,7 +168,7 @@ function showImport(p){
 }
 
 /* ---------- events ---------- */
-document.addEventListener("click",function(e){
+document.addEventListener("click",async function(e){
   var b=e.target.closest("[data-act]");if(!b||b.tagName==="SELECT"||b.tagName==="INPUT")return;
   var a=b.dataset.act,id=b.dataset.id;
   if(a==="tab"){tab=b.dataset.t;render();}
@@ -176,13 +191,15 @@ document.addEventListener("click",function(e){
     var hx=ac2.holdings.filter(function(x){return x.id===id;})[0]||{id:id};
     var price=num($("#h-price").value);
     hx.sym=sym.slice(0,16);hx.name=$("#h-name").value.trim().slice(0,80);hx.units=units;hx.cost=num($("#h-cost").value)||0;hx.cur=$("#h-cur").value;
-    if(price!=null&&price!==hx.price){hx.price=price;hx.priceAt=today();}else if(hx.price==null)hx.price=0;
+    if(price!=null&&price!==hx.price){hx.price=price;hx.priceAt=today();hx.auto=0;}else if(hx.price==null)hx.price=0;
     hx.cls=$("#h-cls").value||I.guessClass(hx.sym,hx.cur);
     if(b.dataset.new==="1"){ac2.holdings.push(hx);K.track("holding_add");}save();closeDlg();render();
   }
   else if(a==="delhold"){var ac3=acct(b.dataset.a);ac3.holdings=ac3.holdings.filter(function(x){return x.id!==id;});save();closeDlg();render();}
   else if(a==="prices")pricesDialog();
-  else if(a==="saveprices"){var c=0;document.querySelectorAll("[data-psym]").forEach(function(inp){var p=num(inp.value);if(p==null)return;S.accounts.forEach(function(ac){ac.holdings.forEach(function(x){if((x.sym||x.name)===inp.dataset.psym){x.price=p;x.priceAt=today();c++;}});});});
+  else if(a==="getprices"){b.disabled=true;var res=await refreshPrices(true);closeDlg();render();
+    toast(!res?"Couldn't get prices. Check the connection.":res.matched?(res.updated?"Updated "+res.updated+(res.updated===1?" price":" prices")+".":"Prices are already up to date.")+(res.unmatched.length?" Not found: "+res.unmatched.slice(0,4).join(", ")+(res.unmatched.length>4?"…":""):""):"None of your symbols are in the daily list. Type prices in, or check the symbols.");}
+  else if(a==="saveprices"){var c=0;document.querySelectorAll("[data-psym]").forEach(function(inp){var p=num(inp.value);if(p==null)return;S.accounts.forEach(function(ac){ac.holdings.forEach(function(x){if((x.sym||x.name)===inp.dataset.psym){x.price=p;x.priceAt=today();x.auto=0;c++;}});});});
     save();closeDlg();render();toast(c?"Prices updated.":"Nothing changed.");if(c)K.track("prices_update");}
   else if(a==="import")importDialog();
   else if(a==="readcsv")showImport(I.parseHoldings($("#i-text").value));
@@ -223,7 +240,7 @@ $("#tabs").addEventListener("click",function(e){var b=e.target.closest("[data-ta
 K.boot({
   app:"invest",title:"Investments",version:"invest-v1",blurb:"Everything you own across every account, in one place.",
   clean:I.clean,
-  onOpen:function(s){S=s;if(S.accounts.length){I.snap(S,today());}render();},
+  onOpen:function(s){S=s;setTimeout(function(){refreshPrices(true);},300);if(S.accounts.length){I.snap(S,today());}render();},
   onRemote:function(s){S=s;if(!$("#dlg").open)render();},
   onStatus:function(t){var st=$("#st");if(st)st.textContent=t;},
   onGate:function(shown){$("#app").hidden=shown;$("#tabs").hidden=shown;},
@@ -244,4 +261,8 @@ document.addEventListener("change",function(e){
     try{K.restoreCopy(String(r.result));toast("Restored from your copy.");}
     catch(x){toast(x&&x.code==="wrongapp"?"That copy is from "+(x.app||"another app")+", not Investments.":"That file isn't a Investments copy.");}
   };r.readAsText(f);
+});
+
+document.addEventListener("change",function(e){
+  if(e.target.dataset&&e.target.dataset.act==="autoprices"){S.autoPrices=e.target.checked;save();K.track(S.autoPrices?"autoprices_on":"autoprices_off");if(S.autoPrices)refreshPrices(true);}
 });

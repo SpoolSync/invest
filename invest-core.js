@@ -94,10 +94,10 @@ function clean(s){
   s=s&&typeof s==="object"?s:{};
   function str(v,k){return String(v==null?"":v).slice(0,k);}
   var ty=TYPES.map(function(t){return t[0];}),cl=CLASSES.map(function(c){return c[0];});
-  var out={ts:+s.ts||0,usdcad:n(s.usdcad)>0.5&&n(s.usdcad)<3?n(s.usdcad):1.38,accounts:[],moves:[],divs:[],room:{},snaps:[]};
+  var out={ts:+s.ts||0,usdcad:n(s.usdcad)>0.5&&n(s.usdcad)<3?n(s.usdcad):1.38,autoPrices:s.autoPrices!==false,accounts:[],moves:[],divs:[],room:{},snaps:[]};
   (Array.isArray(s.accounts)?s.accounts:[]).slice(0,60).forEach(function(a){if(!a||!a.id)return;
     out.accounts.push({id:str(a.id,24),name:str(a.name,60)||"Account",type:ty.indexOf(a.type)>=0?a.type:"other",inst:str(a.inst,40),cur:a.cur==="USD"?"USD":"CAD",cashBal:n(a.cashBal),
-      holdings:(Array.isArray(a.holdings)?a.holdings:[]).slice(0,300).filter(function(h){return h&&h.id;}).map(function(h){return {id:str(h.id,24),sym:str(h.sym,16),name:str(h.name,80),units:n(h.units),cost:n(h.cost),price:n(h.price),priceAt:/^\d{4}-\d{2}-\d{2}$/.test(h.priceAt)?h.priceAt:"",cur:h.cur==="USD"?"USD":"CAD",cls:cl.indexOf(h.cls)>=0?h.cls:"other"};})});});
+      holdings:(Array.isArray(a.holdings)?a.holdings:[]).slice(0,300).filter(function(h){return h&&h.id;}).map(function(h){return {id:str(h.id,24),sym:str(h.sym,16),name:str(h.name,80),units:n(h.units),cost:n(h.cost),price:n(h.price),priceAt:/^\d{4}-\d{2}-\d{2}$/.test(h.priceAt)?h.priceAt:"",cur:h.cur==="USD"?"USD":"CAD",cls:cl.indexOf(h.cls)>=0?h.cls:"other",auto:h.auto?1:0};})});});
   (Array.isArray(s.moves)?s.moves:[]).slice(0,3000).forEach(function(m){if(m&&m.id&&/^\d{4}-\d{2}-\d{2}$/.test(m.date)&&["tfsa","rrsp","fhsa"].indexOf(m.type)>=0)out.moves.push({id:str(m.id,24),date:m.date,type:m.type,kind:m.kind==="out"?"out":"in",amount:Math.abs(n(m.amount)),acct:str(m.acct,24),note:str(m.note,80)});});
   (Array.isArray(s.divs)?s.divs:[]).slice(0,5000).forEach(function(d){if(d&&d.id&&/^\d{4}-\d{2}-\d{2}$/.test(d.date))out.divs.push({id:str(d.id,24),date:d.date,sym:str(d.sym,16),amount:Math.abs(n(d.amount)),cur:d.cur==="USD"?"USD":"CAD",acct:str(d.acct,24)});});
   if(s.room&&typeof s.room==="object")["tfsa","rrsp","fhsa"].forEach(function(k){var y=s.room[k];if(y&&typeof y==="object"){out.room[k]={};Object.keys(y).forEach(function(yr){if(/^\d{4}$/.test(yr)&&y[yr]!==""&&y[yr]!=null)out.room[k][yr]=n(y[yr]);});}});
@@ -106,6 +106,38 @@ function clean(s){
 }
 /* One snapshot a day of total value, for the history line. */
 function snap(state,day){var t=totals(state),last=state.snaps[state.snaps.length-1];if(last&&last.d===day){last.v=t.value;last.c=t.cost;}else state.snaps.push({d:day,v:t.value,c:t.cost});if(state.snaps.length>800)state.snaps.splice(0,state.snaps.length-800);}
-var api={TYPES:TYPES,CLASSES:CLASSES,LIMITS:LIMITS,totals:totals,room:room,dividends:dividends,parseHoldings:parseHoldings,csvRows:csvRows,guessClass:guessClass,clean:clean,snap:snap,hValue:hValue,daysBetween:daysBetween};
+/* ---- automatic prices ----
+   prices.json maps Yahoo-style symbols to [price, "C" (CAD) | "U" (USD)]. The phone downloads the whole file and
+   matches here, so what someone holds never leaves the phone. */
+function candidates(sym,cur,cls){
+  var s=String(sym||"").trim().toUpperCase().replace(/\s+/g,"");if(!s)return [];
+  var m=/^(.+?)[.:-](TO|TSX|NE|NEO|V|TSXV|CN|CSE|US|U)$/.exec(s),base=m?m[1]:s,ex=m?m[2]:"";
+  var b=base.replace(/\./g,"-");
+  if(cls==="crypto"||/^(BTC|ETH|SOL|LTC|DOGE|XRP|ADA)$/.test(b))return cur==="USD"?[b+"-USD",b+"-CAD"]:[b+"-CAD",b+"-USD"];
+  if(ex==="TO"||ex==="TSX")return [b+".TO"];
+  if(ex==="NE"||ex==="NEO")return [b+".NE",b+".TO"];
+  if(ex==="V"||ex==="TSXV")return [b+".V"];
+  if(ex==="CN"||ex==="CSE")return [b+".CN"];
+  if(ex==="US"||ex==="U")return [b];
+  return cur==="USD"?[b,b+".TO"]:[b+".TO",b+".NE",b];
+}
+function applyPrices(state,file,opt){
+  opt=opt||{};var out={updated:0,matched:0,fx:false,unmatched:[]};
+  if(!file||!file.p||!/^\d{4}-\d{2}-\d{2}$/.test(file.d))return out;
+  (state.accounts||[]).forEach(function(a){(a.holdings||[]).forEach(function(h){
+    if(!h.sym)return;
+    var want=h.cur==="USD"?"U":"C",hit=null;
+    candidates(h.sym,h.cur,h.cls).some(function(c){var q=file.p[c];if(q&&q[1]===want){hit=q;return true;}return false;});
+    if(!hit){out.unmatched.push(h.sym);return;}
+    out.matched++;
+    if(h.priceAt&&h.priceAt>file.d)return;          // typed in by hand after that close: keep it
+    if(h.price===hit[0]&&h.priceAt===file.d)return;
+    h.price=hit[0];h.priceAt=file.d;h.auto=1;out.updated++;
+  });});
+  var fx=file.fx&&+file.fx.USDCAD;
+  if(opt.fx!==false&&fx>0.5&&fx<3&&state.usdcad!==Math.round(fx*10000)/10000){state.usdcad=Math.round(fx*10000)/10000;out.fx=true;}
+  return out;
+}
+var api={applyPrices:applyPrices,candidates:candidates,TYPES:TYPES,CLASSES:CLASSES,LIMITS:LIMITS,totals:totals,room:room,dividends:dividends,parseHoldings:parseHoldings,csvRows:csvRows,guessClass:guessClass,clean:clean,snap:snap,hValue:hValue,daysBetween:daysBetween};
 if(typeof module!=="undefined"&&module.exports)module.exports=api;else root.InvestCore=api;
 })(typeof self!=="undefined"?self:this);
