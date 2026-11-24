@@ -3,7 +3,7 @@
    Storage, sign-in, the Pixora passcode and encrypted sync come from pixora-kit.js.
    This app tracks; it doesn't advise. Room numbers start from what your CRA account shows. */
 var I=InvestCore,K=PixoraKit,esc=K.esc;
-var S=null,tab="overview",openAcct=null,importRows=null;
+var S=null,tab="overview",openAcct=null,importRows=null,importTo=null;
 var TYPE={},CLS={};I.TYPES.forEach(function(t){TYPE[t[0]]=t[1];});I.CLASSES.forEach(function(c){CLS[c[0]]=c[1];});
 var CLSCOL={ca:"#c0392b",us:"#1f4fa8",intl:"#7d3cb8",global:"#0f8a8a",bond:"#2e8b57",cash:"#8a8f98",crypto:"#d4a017",other:"#5f6b7a"};
 function $(s){return document.querySelector(s);}
@@ -100,6 +100,7 @@ function roomView(){
 function settings(){
   var h='<button class="btn q s" data-act="tab" data-t="overview" style="align-self:flex-start">← Back</button><h1>Settings</h1>';
   h+='<section class="card"><h2>US dollar rate</h2><p class="note">Used to show US holdings in Canadian dollars. Update it now and then.</p><div class="row"><input type="text" inputmode="decimal" id="usd" value="'+S.usdcad+'" style="width:120px"><span class="note">CAD per 1 USD</span><button class="btn q s" data-act="saveusd">Save</button></div></section>';
+  h+='<section class="card"><h2>Ideas or problems?</h2><p class="small muted">Tell Sachin what would make Investments better or what went wrong. Nothing from your data is sent.</p><div class="row"><button class="btn" data-act="feedback">Send feedback</button></div></section>';
   h+='<section class="card"><h2>Account</h2>'+(K.local?'<p class="small">On this phone only.</p><div class="row"><button class="btn" data-act="join">Sign in or create a Pixora account</button></div>':
     '<p class="small">Signed in as '+esc(K.email||"")+'. Everything is encrypted on this phone before it syncs. Nobody else can read it, not even Pixora. Nothing connects to your broker or bank.</p><div class="row"><button class="btn q" data-act="signout">Sign out</button></div>')+'</section>';
   h+='<section class="card"><h2>Delete my Investments data</h2><p class="note">Deletes your accounts, holdings, room and dividends from this phone'+(K.local?"":" and your Pixora account")+'. Your Pixora login and other apps aren\'t affected. To delete the Pixora login itself, email pixora3dstudios@gmail.com.</p><div class="row"><button class="btn d" data-act="delall">Delete my Investments data</button></div></section>';
@@ -107,7 +108,7 @@ function settings(){
 }
 
 /* ---------- dialogs ---------- */
-function dlg(html){var d=$("#dlg");d.innerHTML='<div class="form">'+html+'</div>';d.showModal();return d;}
+function dlg(html){var d=$("#dlg");d.innerHTML='<div class="form">'+html+'</div>';if(!d.open)d.showModal();return d;}
 function closeDlg(){var d=$("#dlg");if(d.open)d.close();d.innerHTML="";}
 $("#dlg").addEventListener("cancel",function(e){e.preventDefault();closeDlg();});
 function opts(list,sel){return list.map(function(x){return '<option value="'+x[0]+'"'+(x[0]===sel?" selected":"")+'>'+esc(x[1])+'</option>';}).join("");}
@@ -145,7 +146,7 @@ function showImport(p){
   var o=$("#i-out");if(!p.ok){o.innerHTML='<p class="small neg" style="font-weight:600">'+esc(p.why)+'</p>';return;}
   importRows=p.rows;
   o.innerHTML='<p class="small" style="font-weight:600">Found '+p.rows.length+' holding'+(p.rows.length===1?"":"s")+'.</p>'+p.rows.slice(0,40).map(function(r){return ln((r.sym||r.name)+" · "+r.units,(r.price!=null?(r.cur==="USD"?"US$":"$")+r.price:"no price")+(r.cost!=null?" · cost "+money(r.cost):""));}).join("")+
-    '<label class="f">Put them in<select id="i-acct">'+S.accounts.map(function(a){return '<option value="'+a.id+'">'+esc(a.name)+'</option>';}).join("")+'<option value="_new">A new account</option></select></label>'+
+    '<label class="f">Put them in<select id="i-acct">'+S.accounts.map(function(a){return '<option value="'+a.id+'"'+(a.id===importTo?" selected":"")+'>'+esc(a.name)+'</option>';}).join("")+'<option value="_new">A new account</option></select></label>'+
     '<label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="i-replace" checked> Replace that account\'s holdings (an export is a full snapshot)</label>'+
     '<div class="row"><button class="btn p" data-act="doimport">Import</button></div>';
 }
@@ -161,7 +162,9 @@ document.addEventListener("click",function(e){
   else if(a==="saveacct"){
     var nm=$("#a-name").value.trim();if(!nm){toast("Give it a name.");return;}
     var x=acct(id)||{id:id,holdings:[]};x.name=nm.slice(0,60);x.type=$("#a-type").value;x.cur=$("#a-cur").value;x.inst=$("#a-inst").value.trim().slice(0,40);x.cashBal=num($("#a-cash").value)||0;
-    if(b.dataset.new==="1"){S.accounts.push(x);K.track("account_add");}save();closeDlg();tab="accounts";render();
+    var isNew=b.dataset.new==="1";if(isNew){importTo=x.id;S.accounts.push(x);K.track("account_add");}save();closeDlg();tab="accounts";render();
+    if(isNew&&x.type!=="cash")dlg('<h2>What\'s in '+esc(x.name)+'?</h2><p class="note">Add the stocks, ETFs or funds you hold there so the totals mean something. Fastest is a CSV from your broker\'s website; typing a few in works too.</p>'+
+      '<div style="display:flex;flex-direction:column;gap:8px"><button class="btn p" data-act="import">Import a CSV from my broker</button><button class="btn" data-act="newhold" data-a="'+x.id+'">Type in a holding</button><button class="btn q" data-act="close">Later</button></div>');
   }
   else if(a==="delacct"){if(b.dataset.armed!=="1"){b.dataset.armed="1";b.textContent="Tap again: delete it and its holdings";return;}S.accounts=S.accounts.filter(function(x){return x.id!==id;});save();closeDlg();render();}
   else if(a==="newhold")holdDialog(acct(b.dataset.a),null);
@@ -208,6 +211,7 @@ document.addEventListener("click",function(e){
   else if(a==="saveusd"){var u=num($("#usd").value);if(!u||u<0.5||u>3){toast("That rate looks off.");return;}S.usdcad=u;save();toast("Saved.");}
   else if(a==="delall"){if(b.dataset.armed!=="1"){b.dataset.armed="1";b.textContent="Tap again: delete everything in Investments";return;}
     tab="overview";K.deleteAppData().then(function(){render();toast("Your Investments data is deleted. Your Pixora login still works.");}).catch(function(){toast("Couldn't delete. Check the connection.");});}
+  else if(a==="feedback"){if(window.PixoraFeedback)PixoraFeedback.open("invest","Investments");}
   else if(a==="join")K.joinAccount();
   else if(a==="signout")K.signOut();
   else if(a==="close")closeDlg();
