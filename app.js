@@ -100,6 +100,7 @@ function roomView(){
 function settings(){
   var h='<button class="btn q s" data-act="tab" data-t="overview" style="align-self:flex-start">← Back</button><h1>Settings</h1>';
   h+='<section class="card"><h2>US dollar rate</h2><p class="note">Used to show US holdings in Canadian dollars. Update it now and then.</p><div class="row"><input type="text" inputmode="decimal" id="usd" value="'+S.usdcad+'" style="width:120px"><span class="note">CAD per 1 USD</span><button class="btn q s" data-act="saveusd">Save</button></div></section>';
+  h+='<section class="card"><h2>Your copy</h2><p class="small muted">Download everything in Investments as a file you keep, and bring it back here or on a new phone. It\'s a plain file, not encrypted, so keep it somewhere private.</p><div class="row"><button class="btn" data-act="export">Download a copy</button><label class="btn q" style="cursor:pointer">Restore from a copy<input type="file" id="restore" accept=".json,application/json" hidden></label></div></section>';
   h+='<section class="card"><h2>Ideas or problems?</h2><p class="small muted">Tell Sachin what would make Investments better or what went wrong. Nothing from your data is sent.</p><div class="row"><button class="btn" data-act="feedback">Send feedback</button></div></section>';
   h+='<section class="card"><h2>Account</h2>'+(K.local?'<p class="small">On this phone only.</p><div class="row"><button class="btn" data-act="join">Sign in or create a Pixora account</button></div>':
     '<p class="small">Signed in as '+esc(K.email||"")+'. Everything is encrypted on this phone before it syncs. Nobody else can read it, not even Pixora. Nothing connects to your broker or bank.</p><div class="row"><button class="btn q" data-act="signout">Sign out</button></div>')+'</section>';
@@ -211,6 +212,7 @@ document.addEventListener("click",function(e){
   else if(a==="saveusd"){var u=num($("#usd").value);if(!u||u<0.5||u>3){toast("That rate looks off.");return;}S.usdcad=u;save();toast("Saved.");}
   else if(a==="delall"){if(b.dataset.armed!=="1"){b.dataset.armed="1";b.textContent="Tap again: delete everything in Investments";return;}
     tab="overview";K.deleteAppData().then(function(){render();toast("Your Investments data is deleted. Your Pixora login still works.");}).catch(function(){toast("Couldn't delete. Check the connection.");});}
+  else if(a==="export")K.exportCopy();
   else if(a==="feedback"){if(window.PixoraFeedback)PixoraFeedback.open("invest","Investments");}
   else if(a==="join")K.joinAccount();
   else if(a==="signout")K.signOut();
@@ -232,4 +234,14 @@ K.boot({
     var r=I.room(s,year()),room={};Object.keys(r).forEach(function(k){room[k]=r[k].left;});
     return {d:today(),value:t.value,gain:t.gain,gainPct:t.gainPct,week:wk?Math.round((t.value-wk.v)*100)/100:null,room:room,stale:t.stale};
   }
+});
+
+document.addEventListener("change",function(e){
+  if(e.target.id!=="restore"||!e.target.files[0])return;
+  var f=e.target.files[0],r=new FileReader();e.target.value="";
+  r.onload=function(){
+    if(!confirm("Replace what's in Investments now with this copy? What's here now is replaced."))return;
+    try{K.restoreCopy(String(r.result));toast("Restored from your copy.");}
+    catch(x){toast(x&&x.code==="wrongapp"?"That copy is from "+(x.app||"another app")+", not Investments.":"That file isn't a Investments copy.");}
+  };r.readAsText(f);
 });
