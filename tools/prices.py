@@ -66,14 +66,23 @@ def main():
         fx = quote("CAD=X")[0]  # CAD per 1 USD
     except Exception as e:
         print("fx failed:", e, file=sys.stderr)
+    # Travel and family currencies, each as CAD per 1 unit (used by Split Log for foreign expenses).
+    rates = {}
+    for c in "USD EUR GBP INR AUD NZD MXN JPY CNY HKD SGD AED CHF SEK NOK DKK PLN KRW THB PHP VND IDR MYR BRL ZAR TRY EGP MAD DOP JMD CRC COP PEN CLP ARS ILS SAR QAR PKR LKR BDT NPR KES NGN".split():
+        try:
+            q = json.loads(get("https://query1.finance.yahoo.com/v8/finance/chart/%sCAD=X?range=5d&interval=1d" % c))["chart"]["result"][0]["meta"].get("regularMarketPrice")
+            if q and q > 0: rates[c] = round(float(q), 8)
+        except Exception:
+            pass
+        time.sleep(0.1)
     if len(prices) < 50:
         print("too few prices (%d); keeping the previous file" % len(prices), file=sys.stderr)
         sys.exit(1)
     d = datetime.datetime.fromtimestamp(latest, datetime.timezone(datetime.timedelta(hours=-5))).date().isoformat() if latest else datetime.date.today().isoformat()
-    data = {"d": d, "at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), "fx": {"USDCAD": fx} if fx else {}, "p": dict(sorted(prices.items()))}
+    data = {"d": d, "at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), "fx": dict({"USDCAD": fx} if fx else {}, **{"CAD": rates}), "p": dict(sorted(prices.items()))}
     with open(OUT, "w") as f:
         json.dump(data, f, separators=(",", ":"))
-    print("wrote %d prices for %s, USDCAD %s; %d failed: %s" % (len(prices), d, fx, len(fails), " ".join(fails[:80])))
+    print("wrote %d prices for %s, USDCAD %s, %d currencies; %d failed: %s" % (len(prices), d, fx, len(rates), len(fails), " ".join(fails[:80])))
 
 if __name__ == "__main__":
     main()
