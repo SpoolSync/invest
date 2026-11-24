@@ -53,4 +53,14 @@ t("prices apply on the phone, by currency, without overriding newer typed prices
   assert.deepStrictEqual(r.unmatched,["ZZZZ"]);assert.strictEqual(r.updated,3);assert.strictEqual(st.usdcad,1.4012);assert.ok(r.fx);
   var r2=I.applyPrices(st,f);assert.strictEqual(r2.updated,0,"idempotent");
 });
+t("target mix: drift and where new money goes, no selling",function(){
+  var st=I.clean({usdcad:1.4,targets:{us:50,ca:30,bond:20},accounts:[{id:"a",name:"T",type:"tfsa",holdings:[
+    {id:"1",sym:"VFV",units:10,cost:1000,price:120,cur:"CAD",cls:"us"},{id:"2",sym:"XIC",units:10,cost:300,price:30,cur:"CAD",cls:"ca"},{id:"3",sym:"ZAG",units:10,cost:150,price:15,cur:"CAD",cls:"bond"}]}]});
+  var r=I.rebalance(st,600),by={};r.rows.forEach(function(x){by[x.cls]=x;});
+  assert.strictEqual(r.total,1650);assert.strictEqual(by.us.drift,22.7);
+  assert.strictEqual(Math.round(by.us.buy+by.ca.buy+by.bond.buy),600);assert.strictEqual(by.us.buy,0,"over target gets nothing");
+  assert.ok(by.ca.buy>by.bond.buy);assert.strictEqual(by.ca.example,"XIC");
+  var r2=I.rebalance(st,5000),b2={};r2.rows.forEach(function(x){b2[x.cls]=x;});assert.strictEqual(Math.round(b2.us.buy+b2.ca.buy+b2.bond.buy),5000);
+  assert.strictEqual(I.rebalance(I.clean({}),100),null);
+});
 console.log(n+" tests passed");

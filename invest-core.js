@@ -94,7 +94,7 @@ function clean(s){
   s=s&&typeof s==="object"?s:{};
   function str(v,k){return String(v==null?"":v).slice(0,k);}
   var ty=TYPES.map(function(t){return t[0];}),cl=CLASSES.map(function(c){return c[0];});
-  var out={ts:+s.ts||0,usdcad:n(s.usdcad)>0.5&&n(s.usdcad)<3?n(s.usdcad):1.38,autoPrices:s.autoPrices!==false,accounts:[],moves:[],divs:[],room:{},snaps:[]};
+  var out={ts:+s.ts||0,usdcad:n(s.usdcad)>0.5&&n(s.usdcad)<3?n(s.usdcad):1.38,autoPrices:s.autoPrices!==false,targets:{},accounts:[],moves:[],divs:[],room:{},snaps:[]};
   (Array.isArray(s.accounts)?s.accounts:[]).slice(0,60).forEach(function(a){if(!a||!a.id)return;
     out.accounts.push({id:str(a.id,24),name:str(a.name,60)||"Account",type:ty.indexOf(a.type)>=0?a.type:"other",inst:str(a.inst,40),cur:a.cur==="USD"?"USD":"CAD",cashBal:n(a.cashBal),
       holdings:(Array.isArray(a.holdings)?a.holdings:[]).slice(0,300).filter(function(h){return h&&h.id;}).map(function(h){return {id:str(h.id,24),sym:str(h.sym,16),name:str(h.name,80),units:n(h.units),cost:n(h.cost),price:n(h.price),priceAt:/^\d{4}-\d{2}-\d{2}$/.test(h.priceAt)?h.priceAt:"",cur:h.cur==="USD"?"USD":"CAD",cls:cl.indexOf(h.cls)>=0?h.cls:"other",auto:h.auto?1:0};})});});
@@ -102,6 +102,7 @@ function clean(s){
   (Array.isArray(s.divs)?s.divs:[]).slice(0,5000).forEach(function(d){if(d&&d.id&&/^\d{4}-\d{2}-\d{2}$/.test(d.date))out.divs.push({id:str(d.id,24),date:d.date,sym:str(d.sym,16),amount:Math.abs(n(d.amount)),cur:d.cur==="USD"?"USD":"CAD",acct:str(d.acct,24)});});
   if(s.room&&typeof s.room==="object")["tfsa","rrsp","fhsa"].forEach(function(k){var y=s.room[k];if(y&&typeof y==="object"){out.room[k]={};Object.keys(y).forEach(function(yr){if(/^\d{4}$/.test(yr)&&y[yr]!==""&&y[yr]!=null)out.room[k][yr]=n(y[yr]);});}});
   (Array.isArray(s.snaps)?s.snaps:[]).slice(-800).forEach(function(x){if(x&&/^\d{4}-\d{2}-\d{2}$/.test(x.d))out.snaps.push({d:x.d,v:r2(n(x.v)),c:r2(n(x.c))});});
+  if(s.targets&&typeof s.targets==="object")Object.keys(s.targets).forEach(function(k){var v=n(s.targets[k]);if(v>0&&v<=100&&cl.indexOf(k)>=0)out.targets[k]=v;});
   return out;
 }
 /* One snapshot a day of total value, for the history line. */
@@ -138,6 +139,27 @@ function applyPrices(state,file,opt){
   if(opt.fx!==false&&fx>0.5&&fx<3&&state.usdcad!==Math.round(fx*10000)/10000){state.usdcad=Math.round(fx*10000)/10000;out.fx=true;}
   return out;
 }
-var api={applyPrices:applyPrices,candidates:candidates,TYPES:TYPES,CLASSES:CLASSES,LIMITS:LIMITS,totals:totals,room:room,dividends:dividends,parseHoldings:parseHoldings,csvRows:csvRows,guessClass:guessClass,clean:clean,snap:snap,hValue:hValue,daysBetween:daysBetween};
+/* ---- target mix ----
+   targets: {class: percent}. Arithmetic only: how far each kind is from the person's own targets, and how
+   new money could be split to move toward them without selling anything. */
+function rebalance(state,cash){
+  var t=totals(state),tg=state.targets||{},keys=Object.keys(tg).filter(function(k){return n(tg[k])>0;});
+  var sum=keys.reduce(function(a,k){return a+n(tg[k]);},0);if(!sum)return null;
+  cash=Math.max(0,n(cash));
+  var all={};keys.concat(Object.keys(t.byClass)).forEach(function(k){all[k]=1;});
+  var after=t.value+cash,rows=Object.keys(all).map(function(k){var now=t.byClass[k]||0,pct=n(tg[k])/sum*100;
+    return {cls:k,now:now,nowPct:t.value?now/t.value*100:0,target:pct,want:after*pct/100,gap:after*pct/100-now,buy:0};});
+  var need=rows.reduce(function(a,r){return a+Math.max(0,r.gap);},0),left=cash;
+  if(cash>0){
+    if(need>0){rows.forEach(function(r){if(r.gap>0)r.buy=Math.min(r.gap,cash*r.gap/need);});}
+    left=cash-rows.reduce(function(a,r){return a+r.buy;},0);
+    if(left>0.005)rows.forEach(function(r){r.buy+=left*r.target/100;});
+  }
+  rows.forEach(function(r){r.buy=Math.round(r.buy*100)/100;r.drift=Math.round((r.nowPct-r.target)*10)/10;
+    var best=null;(state.accounts||[]).forEach(function(a){(a.holdings||[]).forEach(function(h){if(h.cls===r.cls){var v=hValue(h,n(state.usdcad)||1.38);if(!best||v>best.v)best={sym:h.sym||h.name,v:v};}});});r.example=best&&best.sym;});
+  rows.sort(function(a,b){return b.target-a.target||b.now-a.now;});
+  return {rows:rows,total:t.value,cash:cash,maxDrift:Math.max.apply(null,rows.map(function(r){return Math.abs(r.drift);}))};
+}
+var api={rebalance:rebalance,applyPrices:applyPrices,candidates:candidates,TYPES:TYPES,CLASSES:CLASSES,LIMITS:LIMITS,totals:totals,room:room,dividends:dividends,parseHoldings:parseHoldings,csvRows:csvRows,guessClass:guessClass,clean:clean,snap:snap,hValue:hValue,daysBetween:daysBetween};
 if(typeof module!=="undefined"&&module.exports)module.exports=api;else root.InvestCore=api;
 })(typeof self!=="undefined"?self:this);

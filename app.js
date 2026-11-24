@@ -63,6 +63,7 @@ function overview(){
     h+='<section class="card"><h2>What you own</h2><div class="bar" role="img" aria-label="Allocation">'+cls.map(function(k){return '<i style="width:'+(100*t.byClass[k]/t.value).toFixed(2)+'%;background:'+CLSCOL[k]+'"></i>';}).join("")+'</div>';
     cls.forEach(function(k){h+=ln(CLS[k],money(t.byClass[k])+" · "+Math.round(100*t.byClass[k]/t.value)+"%");});h+='</section>';
   }
+  h+=targetCard();
   h+='<section class="card"><h2>By account type</h2>';
   Object.keys(t.byType).sort(function(a,b){return t.byType[b]-t.byType[a];}).forEach(function(k){h+=ln(TYPE[k],money(t.byType[k]));});h+='</section>';
   var r=I.room(S,year()),dv=I.dividends(S,year());
@@ -70,6 +71,20 @@ function overview(){
   ["tfsa","rrsp","fhsa"].forEach(function(k){if(r[k])h+=ln(TYPE[k]+" room left",money(r[k].left),r[k].left<0?"neg":"");});
   if(!Object.keys(r).length)h+='<p class="note">Add your contribution room under Room &amp; income to see what\'s left this year.</p>';
   return h+'</section><p class="note">Values use the prices you last entered or imported, and '+S.usdcad+' CAD per USD (change it in Settings). This app tracks; it isn\'t financial advice.</p>';
+}
+var addCash="";
+/* Target mix: the person's own split by kind of investment, how far off they are, and how new money
+   could be split to move toward it without selling. Arithmetic on their targets, not advice. */
+function targetCard(){
+  var r=I.rebalance(S,num(addCash)||0);
+  if(!r)return '<section class="card"><h2>Target mix</h2><p class="note">Set the split you want, like 60% stocks and 40% bonds, and see how far off you are and where new money would bring you back.</p><div class="row"><button class="btn q s" data-act="targets">Set a target mix</button></div></section>';
+  var h='<section class="card"><div class="dayhead"><h2>Target mix</h2><button class="add" data-act="targets">Change</button></div>';
+  h+='<p class="note">'+(r.maxDrift<=5?"Within 5 points of your targets everywhere.":"Off by up to "+Math.round(r.maxDrift)+" points.")+'</p>';
+  r.rows.forEach(function(x){var off=x.drift;
+    h+='<div class="ln"><span>'+esc(CLS[x.cls]||x.cls)+'</span><span class="lead"></span><span class="v">'+Math.round(x.nowPct)+'% now · '+Math.round(x.target)+'% target'+(Math.abs(off)>=1?' <b class="'+(Math.abs(off)>5?"neg":"")+'">('+(off>0?"+":"")+off+')</b>':"")+'</span></div>';});
+  h+='<div class="row" style="margin-top:8px"><label class="note" for="addcash">Adding</label><input type="text" inputmode="decimal" id="addcash" value="'+esc(addCash)+'" placeholder="$500" style="width:110px"><span class="note">to put it where it brings you closest</span></div>';
+  if(r.cash>0){h+='<div id="split">';r.rows.filter(function(x){return x.buy>=1;}).forEach(function(x){h+='<div class="ln"><span>'+esc(CLS[x.cls]||x.cls)+(x.example?' <span class="note">(like '+esc(x.example)+')</span>':"")+'</span><span class="lead"></span><span class="v pos">'+money(x.buy)+'</span></div>';});h+='</div>';}
+  return h+'<p class="note">This is arithmetic on your own targets, not advice. Mind each account\'s contribution room.</p></section>';
 }
 function accounts(){
   var t=I.totals(S),h=header("Investments","Accounts",'<button class="btn p s" data-act="newacct">Add account</button>');
@@ -99,6 +114,7 @@ function roomView(){
     if(x){
       h+=ln("Room on Jan 1",money(x.start))+ln("Contributed",money(x.contributed))+ln("Left this year",money(x.left),x.left<0?"neg":"");
       if(x.left<0)h+='<p class="small neg" style="font-weight:600">That\'s '+money(-x.left)+' over. '+(k==="rrsp"?"Over-contributions above the $2,000 buffer are taxed 1% a month.":"Over-contributions are taxed 1% a month until withdrawn.")+' Check your CRA account.</p>';
+      if(k==="rrsp"){var dl=new Date(y+1,0,1);dl.setDate(dl.getDate()+59);h+='<p class="note">Contributions until '+dl.toLocaleDateString("en-CA",{month:"long",day:"numeric",year:"numeric"})+' can count toward your '+y+' tax return.</p>';}
       if(k==="tfsa"&&x.withdrawn)h+='<p class="note">'+money(x.backJan1)+' withdrawn this year comes back as room on January 1, '+(y+1)+'.</p>';
     }else h+='<p class="note">'+(k==="tfsa"?"2026 adds $7,000.":k==="rrsp"?"2026 adds 18% of your 2025 earned income, up to $33,810.":"$8,000 a year after you open one, $40,000 lifetime.")+'</p>';
     h+='</div>';
@@ -197,6 +213,18 @@ document.addEventListener("click",async function(e){
   }
   else if(a==="delhold"){var ac3=acct(b.dataset.a);ac3.holdings=ac3.holdings.filter(function(x){return x.id!==id;});save();closeDlg();render();}
   else if(a==="prices")pricesDialog();
+  else if(a==="targets"){
+    var tg=S.targets||{};
+    dlg('<h2>Target mix</h2><p class="note">Your own split. It needs to add up to 100%.</p>'+I.CLASSES.map(function(c){return '<label class="f">'+esc(c[1])+'<input type="text" inputmode="decimal" data-tg="'+c[0]+'" value="'+(tg[c[0]]||"")+'" placeholder="0"></label>';}).join("")+
+      '<p class="note" id="tg-sum"></p><p class="note">Quick fill: <button class="add" data-act="tgfill" data-v="global:100">One all-in-one ETF</button> · <button class="add" data-act="tgfill" data-v="us:45,ca:25,intl:20,bond:10">90/10</button> · <button class="add" data-act="tgfill" data-v="us:35,ca:25,intl:20,bond:20">80/20</button> · <button class="add" data-act="tgfill" data-v="us:25,ca:20,intl:15,bond:40">60/40</button></p>'+
+      '<div class="row"><button class="btn p" data-act="savetargets">Save</button><button class="btn q" data-act="close">Cancel</button>'+(Object.keys(tg).length?'<button class="btn d" data-act="cleartargets">Remove targets</button>':"")+'</div>');
+    var sumf=function(){var t=0;document.querySelectorAll("[data-tg]").forEach(function(el){t+=num(el.value)||0;});$("#tg-sum").textContent="Adds up to "+Math.round(t*10)/10+"%"+(Math.abs(t-100)>0.05?" (needs to be 100)":" ✓");};
+    document.querySelectorAll("[data-tg]").forEach(function(el){el.addEventListener("input",sumf);});sumf();
+  }
+  else if(a==="tgfill"){document.querySelectorAll("[data-tg]").forEach(function(el){el.value="";});b.dataset.v.split(",").forEach(function(p){var kv=p.split(":"),el=document.querySelector('[data-tg="'+kv[0]+'"]');if(el)el.value=kv[1];});document.querySelector("[data-tg]").dispatchEvent(new Event("input"));}
+  else if(a==="savetargets"){var nt={},tot=0;document.querySelectorAll("[data-tg]").forEach(function(el){var v=num(el.value);if(v>0){nt[el.dataset.tg]=v;tot+=v;}});
+    if(Math.abs(tot-100)>0.05){toast("Targets need to add up to 100%.");return;}S.targets=nt;save();closeDlg();render();K.track("targets_set");}
+  else if(a==="cleartargets"){S.targets={};save();closeDlg();render();}
   else if(a==="getprices"){b.disabled=true;var res=await refreshPrices(true);closeDlg();render();
     toast(!res?"Couldn't get prices. Check the connection.":res.matched?(res.updated?"Updated "+res.updated+(res.updated===1?" price":" prices")+".":"Prices are already up to date.")+(res.unmatched.length?" Not found: "+res.unmatched.slice(0,4).join(", ")+(res.unmatched.length>4?"…":""):""):"None of your symbols are in the daily list. Type prices in, or check the symbols.");}
   else if(a==="saveprices"){var c=0;document.querySelectorAll("[data-psym]").forEach(function(inp){var p=num(inp.value);if(p==null)return;S.accounts.forEach(function(ac){ac.holdings.forEach(function(x){if((x.sym||x.name)===inp.dataset.psym){x.price=p;x.priceAt=today();x.auto=0;c++;}});});});
@@ -265,4 +293,8 @@ document.addEventListener("change",function(e){
 
 document.addEventListener("change",function(e){
   if(e.target.dataset&&e.target.dataset.act==="autoprices"){S.autoPrices=e.target.checked;save();K.track(S.autoPrices?"autoprices_on":"autoprices_off");if(S.autoPrices)refreshPrices(true);}
+});
+
+document.addEventListener("input",function(e){
+  if(e.target.id==="addcash"){addCash=e.target.value;var pos=e.target.selectionStart;clearTimeout(window._ac);window._ac=setTimeout(function(){render();var el=$("#addcash");if(el){el.focus();try{el.setSelectionRange(pos,pos);}catch(x){}}K.track("targets_cash");},400);}
 });
