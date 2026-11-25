@@ -1,6 +1,6 @@
 /* Investments: keeps the app's own files on the phone so it opens offline. No user data passes through here. */
-var CACHE="invest-v7";
-var SHELL=["./","index.html","app.js","invest-core.js","pixora-kit.js","pixora-summary.js","pixora-usage.js","pixora-feedback.js","cloud.js","firebase-app-compat.js","firebase-auth-compat.js","firebase-firestore-compat.js","manifest.webmanifest","icon-180.png","icon-192.png","icon-512.png"];
+var CACHE="invest-v8";
+var SHELL=["./","index.html","app.js","invest-core.js","pixora-country.js","pixora-kit.js","pixora-summary.js","pixora-usage.js","pixora-feedback.js","cloud.js","firebase-app-compat.js","firebase-auth-compat.js","firebase-firestore-compat.js","manifest.webmanifest","icon-180.png","icon-192.png","icon-512.png"];
 self.addEventListener("install",function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(SHELL);}).then(function(){return self.skipWaiting();}));});
 self.addEventListener("activate",function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k.indexOf("invest-")===0&&k!==CACHE;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});
 self.addEventListener("fetch",function(e){

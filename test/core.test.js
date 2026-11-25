@@ -10,7 +10,7 @@ t("totals in CAD with USD converted",function(){
   assert.strictEqual(x.byType.tfsa,4900);assert.strictEqual(Math.round(x.byClass.us),1500+1400);
 });
 t("room: this year's contributions only; TFSA withdrawals return Jan 1",function(){
-  var r=I.room(s,2026);assert.deepStrictEqual(r.tfsa,{start:7000,contributed:3000,withdrawn:500,left:4000,backJan1:500});assert.ok(!r.rrsp);
+  var r=I.room(s,2026);assert.deepStrictEqual(r.tfsa,{start:7000,contributed:3000,withdrawn:500,left:4000,backJan1:500,standard:false});assert.ok(!r.rrsp);
 });
 t("dividends this year in CAD",function(){assert.deepStrictEqual(I.dividends(s,2026),{total:54,by:{XEQT:40,AAPL:14}});});
 t("reads a Wealthsimple-style CSV",function(){
@@ -63,4 +63,41 @@ t("target mix: drift and where new money goes, no selling",function(){
   var r2=I.rebalance(st,5000),b2={};r2.rows.forEach(function(x){b2[x.cls]=x;});assert.strictEqual(Math.round(b2.us.buy+b2.ca.buy+b2.bond.buy),5000);
   assert.strictEqual(I.rebalance(I.clean({}),100),null);
 });
+/* ---- United States and India ---- */
+t("US: totals in USD; IRA, 401(k) and HSA use the IRS limits; IRA deadline is tax day",function(){
+  var s=I.clean({country:"US",usdcad:1.4,accounts:[{id:"a",name:"Roth",type:"roth",holdings:[{id:"h",sym:"VTI",units:10,cost:2500,price:300,cls:"us"},{id:"h2",sym:"XEQT.TO",units:10,cost:200,price:35,cur:"CAD",cls:"global"}]}],
+    moves:[{id:"m1",date:"2026-03-01",type:"ira",kind:"in",amount:5000},{id:"m2",date:"2026-01-15",type:"k401",kind:"in",amount:1000}]});
+  assert.strictEqual(s.accounts[0].cur,"USD");assert.strictEqual(s.accounts[0].holdings[0].cur,"USD");
+  assert.strictEqual(I.totals(s).value,3000+Math.round(350/1.4*100)/100);
+  var r=I.room(s,2026);assert.strictEqual(r.ira.left,2500);assert.ok(r.ira.standard);assert.strictEqual(r.k401.left,23500);assert.strictEqual(r.hsa.start,4400);
+  assert.strictEqual(I.room(s,2027).k401.start,25500);
+  s.hsaFamily=true;assert.strictEqual(I.room(s,2026).hsa.start,8750);
+  assert.strictEqual(I.deadline(s,"ira",2026),"2027-04-15");assert.strictEqual(I.deadline(s,"ira",2028),"2029-04-16");
+  assert.ok(!I.room(s,2026).tfsa);
+});
+t("India: rupees, April-March year, PPF counts toward tax-saving",function(){
+  var s=I.clean({country:"IN",accounts:[{id:"a",name:"Zerodha",type:"demat",holdings:[{id:"h",sym:"RELIANCE",units:10,cost:12000,price:1300,cls:"in"}]}],
+    moves:[{id:"m1",date:"2026-03-20",type:"ppf",kind:"in",amount:150000},{id:"m2",date:"2026-04-02",type:"ppf",kind:"in",amount:50000},{id:"m3",date:"2026-06-01",type:"taxsave",kind:"in",amount:40000}]});
+  assert.strictEqual(s.accounts[0].holdings[0].cur,"INR");assert.strictEqual(I.totals(s).value,13000);
+  assert.strictEqual(I.period(s,"2026-03-20"),2025);assert.strictEqual(I.period(s,"2026-04-02"),2026);assert.strictEqual(I.periodLabel(s,2026),"FY 2026-27");
+  var r=I.room(s,2026);assert.strictEqual(r.ppf.left,100000);assert.strictEqual(r.taxsave.contributed,90000);assert.strictEqual(r.taxsave.left,60000);
+  assert.strictEqual(I.room(s,2025).ppf.left,0);assert.strictEqual(I.deadline(s,"ppf",2026),"2027-03-31");
+});
+t("India: NSE/BSE symbols and mutual funds by ISIN or scheme code get prices",function(){
+  assert.deepStrictEqual(I.candidates("RELIANCE","INR"),["RELIANCE.NS","RELIANCE.BO"]);assert.deepStrictEqual(I.candidates("NSE:TCS","INR"),["TCS.NS","TCS.BO"]);assert.deepStrictEqual(I.candidates("500325.BO","INR"),["500325.BO","500325.NS"]);
+  var s=I.clean({country:"IN",accounts:[{id:"a",name:"x",type:"demat",holdings:[{id:"1",sym:"TCS",units:2,price:1},{id:"2",sym:"INF879O01027",units:100,price:1},{id:"3",sym:"122639",units:5,price:1},{id:"4",sym:"AAPL",cur:"USD",units:1,price:1}]}]});
+  var r=I.applyPrices(s,{d:"2026-11-24",p:{"TCS.NS":[3500,"I"],"AAPL":[230,"U"]},fx:{USDCAD:1.4,CAD:{INR:0.0158,USD:1.4}}},{funds:{d:"2026-11-21",n:{"INF879O01027":85.5,"122639":85.5}}});
+  assert.strictEqual(r.updated,4);var h=s.accounts[0].holdings;assert.strictEqual(h[0].price,3500);assert.strictEqual(h[1].price,85.5);assert.strictEqual(h[1].priceAt,"2026-11-21");
+  assert.strictEqual(s.fxc.INR,0.0158);assert.strictEqual(Math.round(I.rate(s,"USD")*100)/100,88.61);
+  assert.strictEqual(I.guessClass("GOLDBEES.NS","INR"),"gold");assert.strictEqual(I.guessClass("INF879O01027","INR"),"in");assert.strictEqual(I.guessClass("MON100.NS","INR"),"us");
+});
+t("India: reads a Zerodha-style holdings CSV in rupees",function(){
+  var p=I.parseHoldings("Instrument,Qty.,Avg. cost,LTP,Cur. val,P&L\nRELIANCE,10,1200.5,1300,13000,995\nNIFTYBEES,50,250,280,14000,1500\n","INR");
+  assert.ok(p.ok);assert.strictEqual(p.rows.length,2);assert.strictEqual(p.rows[0].cur,"INR");assert.strictEqual(p.rows[0].cost,12005);assert.strictEqual(p.rows[1].price,280);
+});
+t("switching country keeps purchase costs right",function(){
+  var s=I.clean({country:"IN",fxc:{INR:0.016},usdcad:1.4,accounts:[{id:"a",name:"x",type:"demat",holdings:[{id:"h",sym:"TCS",units:1,price:1000,cost:800,costCur:"INR"}]}]});
+  assert.strictEqual(I.totals(s).gain,200);s.country="US";var t=I.totals(s);assert.strictEqual(t.value,Math.round(1000*0.016/1.4*100)/100);assert.strictEqual(t.gain,Math.round(200*0.016/1.4*100)/100);
+});
+t("old Canadian data still reads the same",function(){var s=I.clean({usdcad:1.38,accounts:[{id:"a",name:"T",type:"tfsa",cur:"CAD",holdings:[{id:"h",sym:"AAPL",units:1,price:100,cur:"USD"}]}]});assert.strictEqual(I.base(s),"CAD");assert.strictEqual(I.totals(s).value,138);});
 console.log(n+" tests passed");

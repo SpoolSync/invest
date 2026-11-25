@@ -2,7 +2,9 @@
 """Daily closing prices for Pixora Investments.
 
 Writes prices.json: {"d": close date, "at": when fetched, "fx": {"USDCAD": rate},
-"p": {"XEQT.TO": [price, "C"|"U"], ...}}. The app downloads the whole file and matches holdings on the
+"p": {"XEQT.TO": [price, "C"|"U"|"I"], ...}} (CAD, USD or INR).
+Also writes funds-in.json (every Indian mutual fund's latest NAV, by ISIN and AMFI scheme code) and
+funds-in-names.json (names for searching), from AMFI's public daily file. The app downloads the whole file and matches holdings on the
 phone, so nobody learns what anyone holds. Public market data only. Runs on GitHub Actions (see
 .github/workflows/prices.yml); needs no keys.
 """
@@ -43,10 +45,40 @@ def quote(sym):
     j = json.loads(get("https://query1.finance.yahoo.com/v8/finance/chart/%s?range=5d&interval=1d" % urllib.request.quote(sym)))
     m = j["chart"]["result"][0]["meta"]
     p, cur, t = m.get("regularMarketPrice"), m.get("currency"), m.get("regularMarketTime")
-    if not p or cur not in ("CAD", "USD"): return None
-    return round(float(p), 4), "C" if cur == "CAD" else "U", t
+    code = {"CAD": "C", "USD": "U", "INR": "I"}.get(cur)
+    if not p or not code: return None
+    return round(float(p), 4), code, t
+
+FUNDS = os.path.join(HERE, "..", "funds-in.json")
+NAMES = os.path.join(HERE, "..", "funds-in-names.json")
+def funds():
+    """AMFI's NAVAll.txt: Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;NAV;Date"""
+    raw = get("https://www.amfiindia.com/spages/NAVAll.txt").decode("utf-8", "replace")
+    nav, names, latest = {}, [], ""
+    for line in raw.splitlines():
+        p = line.split(";")
+        if len(p) < 6 or not p[0].strip().isdigit(): continue
+        code, isin1, isin2, name, v, d = [x.strip() for x in p[:6]]
+        try: v = round(float(v), 4)
+        except ValueError: continue
+        if v <= 0: continue
+        try: d = datetime.datetime.strptime(d, "%d-%b-%Y").date().isoformat()
+        except ValueError: continue
+        if d > latest: latest = d
+        nav[code] = v
+        for i in (isin1, isin2):
+            if len(i) == 12 and i.startswith("INF"): nav[i] = v
+        key = isin1 if len(isin1) == 12 and isin1.startswith("INF") else (isin2 if len(isin2) == 12 and isin2.startswith("INF") else code)
+        names.append([key, name])
+    if len(names) < 1000: raise RuntimeError("only %d funds" % len(names))
+    names.sort(key=lambda x: x[1].lower())
+    with open(FUNDS, "w") as f: json.dump({"d": latest, "n": nav}, f, separators=(",", ":"))
+    with open(NAMES, "w") as f: json.dump({"d": latest, "f": names}, f, separators=(",", ":"), ensure_ascii=False)
+    print("wrote %d fund NAVs (%d schemes) for %s" % (len(nav), len(names), latest))
 
 def main():
+    try: funds()
+    except Exception as e: print("fund NAVs failed:", e, file=sys.stderr)
     syms = symbols()
     print("fetching", len(syms), "symbols")
     prices, latest, fails = {}, 0, []
