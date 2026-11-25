@@ -1,5 +1,5 @@
 /* Investments: the logic with no screen code, so it can be tested on its own.
-   Works for Canada, the US and India: account types, contribution limits and the home currency follow
+   Works for Canada, the US, the UK and India: account types, contribution limits and the home currency follow
    the person's Pixora country. Prices come from a public daily file matched on the phone, so nothing
    about anyone's holdings ever leaves the phone unencrypted. */
 (function(root){
@@ -8,9 +8,10 @@
 var TYPES=[
   ["tfsa","TFSA"],["rrsp","RRSP"],["fhsa","FHSA"],["resp","RESP"],["lira","LIRA"],["nonreg","Non-registered"],
   ["k401","401(k)"],["roth401k","Roth 401(k)"],["ira","Traditional IRA"],["roth","Roth IRA"],["hsa","HSA"],["p529","529 plan"],["brokerage","Brokerage (taxable)"],
+  ["isa","Stocks & Shares ISA"],["cashisa","Cash ISA"],["lisa","Lifetime ISA"],["sipp","SIPP / personal pension"],["wpp","Workplace pension"],["gia","General investment account"],["jisa","Junior ISA"],
   ["demat","Demat (stocks, ETFs)"],["mf","Mutual funds"],["ppf","PPF"],["epf","EPF / VPF"],["nps","NPS"],["fd","Fixed deposit"],["ssy","Sukanya Samriddhi"],
   ["cash","Cash / savings"],["crypto","Crypto"],["other","Other"]];
-var CLASSES=[["ca","Canadian stocks"],["us","US stocks"],["in","Indian stocks"],["intl","International stocks"],["global","All-in-one / global"],["bond","Bonds / debt"],["gold","Gold"],["cash","Cash"],["crypto","Crypto"],["other","Other"]];
+var CLASSES=[["ca","Canadian stocks"],["us","US stocks"],["uk","UK stocks"],["in","Indian stocks"],["intl","International stocks"],["global","All-in-one / global"],["bond","Bonds / debt"],["gold","Gold"],["cash","Cash"],["crypto","Crypto"],["other","Other"]];
 /* What each country sees and tracks.
    track: types with a yearly contribution limit the app keeps count of.
    fy: "apr" for India's April-March financial year, otherwise the calendar year. */
@@ -19,6 +20,8 @@ var COUNTRY={
     fill:{"global:100":"One all-in-one ETF","us:45,ca:25,intl:20,bond:10":"90/10","us:35,ca:25,intl:20,bond:20":"80/20","us:25,ca:20,intl:15,bond:40":"60/40"}},
   US:{cur:"USD",types:["k401","roth401k","ira","roth","hsa","p529","brokerage","cash","crypto","other"],classes:["us","intl","global","bond","gold","cash","crypto","other"],track:["k401","ira","hsa"],fy:"cal",def:"roth",
     fill:{"global:100":"One all-in-one fund","us:60,intl:30,bond:10":"90/10","us:55,intl:25,bond:20":"80/20","us:40,intl:20,bond:40":"60/40"}},
+  GB:{cur:"GBP",types:["isa","cashisa","lisa","sipp","wpp","gia","jisa","cash","crypto","other"],classes:["uk","us","intl","global","bond","gold","cash","crypto","other"],track:["isa","cashisa","lisa","pension"],fy:"apr6",def:"isa",
+    fill:{"global:100":"One all-in-one fund","uk:20,us:45,intl:25,bond:10":"90/10","uk:20,us:40,intl:20,bond:20":"80/20","uk:15,us:30,intl:15,bond:40":"60/40"}},
   IN:{cur:"INR",types:["demat","mf","ppf","epf","nps","fd","ssy","cash","crypto","other"],classes:["in","us","intl","bond","gold","cash","crypto","other"],track:["ppf","taxsave"],fy:"apr",def:"mf",
     fill:{"in:70,us:10,bond:10,gold:10":"Equity-heavy","in:55,us:10,bond:25,gold:10":"Balanced","in:35,bond:50,gold:15":"Conservative"}}
 };
@@ -26,13 +29,16 @@ var COUNTRY={
    Canada (CRA): TFSA $7,000 for 2026; RRSP 18% of earned income up to $33,810 (2026) / $35,390 (2027); FHSA $8,000 a year, $40,000 lifetime.
    US (IRS): 401(k) $24,500 (2026) / $25,500 (2027); IRA $7,500 (2026 and 2027, traditional and Roth combined);
      HSA $4,400 self-only / $8,750 family (2026), $4,500 / $9,000 (2027). Catch-up amounts for 50+ (55+ for HSA) are extra.
+   UK (HMRC/GOV.UK): ISA allowance £20,000 a tax year across all ISAs; Lifetime ISA £4,000 within it;
+     cash ISAs £12,000 for under-65s from 6 April 2027; pension annual allowance £60,000 (all contributions, including employer and tax relief).
    India: PPF Rs 1.5 lakh per financial year; tax-saving investments under section 123 (80C before April 2026)
      Rs 1.5 lakh, old tax regime only. */
 var LIMITS={tfsa:{2024:7000,2025:7000,2026:7000},rrsp:{2024:31560,2025:32490,2026:33810,2027:35390},fhsa:{year:8000,life:40000},
   k401:{2025:23500,2026:24500,2027:25500},ira:{2025:7000,2026:7500,2027:7500},hsa:{2025:4300,2026:4400,2027:4500},hsaFamily:{2025:8550,2026:8750,2027:9000},
-  ppf:{any:150000},taxsave:{any:150000}};
-var TRACK_LABEL={tfsa:"TFSA",rrsp:"RRSP",fhsa:"FHSA",k401:"401(k)",ira:"IRA (traditional + Roth)",hsa:"HSA",ppf:"PPF",taxsave:"Tax-saving (sec. 123 / 80C)"};
-var ALL_TRACK=["tfsa","rrsp","fhsa","k401","ira","hsa","ppf","taxsave"];
+  ppf:{any:150000},taxsave:{any:150000},
+  isa:{any:20000},lisa:{any:4000},cashisa:{2024:20000,2025:20000,2026:20000,2027:12000,2028:12000,2029:12000,2030:12000},pension:{any:60000}};
+var TRACK_LABEL={isa:"ISA allowance (all ISAs)",cashisa:"Cash ISA",lisa:"Lifetime ISA",pension:"Pension annual allowance",tfsa:"TFSA",rrsp:"RRSP",fhsa:"FHSA",k401:"401(k)",ira:"IRA (traditional + Roth)",hsa:"HSA",ppf:"PPF",taxsave:"Tax-saving (sec. 123 / 80C)"};
+var ALL_TRACK=["tfsa","rrsp","fhsa","k401","ira","hsa","ppf","taxsave","isa","cashisa","lisa","pension"];
 function n(v){v=Number(v);return isFinite(v)?v:0;}
 function r2(v){return Math.round(v*100)/100;}
 function country(state){var c=state&&state.country;if(COUNTRY[c])return c;var PC=root.PixoraCountry;return PC?PC.get():"CA";}
@@ -40,7 +46,7 @@ function base(state){return COUNTRY[country(state)].cur;}
 /* Currencies are kept as "how many Canadian dollars one unit is worth" (that's what the daily file has),
    so any currency converts to any home currency. */
 var CADPER={CAD:1,USD:1.38,INR:0.0157,EUR:1.5,GBP:1.8};
-var CURS=["CAD","USD","INR","EUR","GBP"];
+var CURS=["CAD","USD","GBP","INR","EUR"];
 function cadPer(state,c){if(c==="CAD")return 1;if(c==="USD")return n(state.usdcad)||CADPER.USD;var f=state.fxc&&n(state.fxc[c]);return f>0?f:(CADPER[c]||1);}
 /* Value of 1 unit of currency c in the home currency. */
 function rate(state,c){var b=base(state);c=c||b;return c===b?1:cadPer(state,c)/cadPer(state,b);}
@@ -64,9 +70,12 @@ function totals(state){
 function daysBetween(a,b){var p=a.split("-"),q=b.split("-");return Math.round((Date.UTC(+q[0],+q[1]-1,+q[2])-Date.UTC(+p[0],+p[1]-1,+p[2]))/86400000);}
 /* The contribution year a date falls in: the calendar year, or for India the financial year
    (April to March), named by the year it starts in (FY 2026-27 is 2026). */
-function period(state,date){var y=+String(date).slice(0,4),m=+String(date).slice(5,7);return COUNTRY[country(state)].fy==="apr"&&m<4?y-1:y;}
+function period(state,date){var y=+String(date).slice(0,4),m=+String(date).slice(5,7),d=+String(date).slice(8,10),fy=COUNTRY[country(state)].fy;
+  if(fy==="apr")return m<4?y-1:y;
+  if(fy==="apr6")return m<4||(m===4&&d<6)?y-1:y;   // UK tax year: 6 April to 5 April
+  return y;}
 function periodNow(state,today){return period(state,today||isoToday());}
-function periodLabel(state,p){return COUNTRY[country(state)].fy==="apr"?"FY "+p+"-"+String(p+1).slice(2):String(p);}
+function periodLabel(state,p){var fy=COUNTRY[country(state)].fy;return fy==="apr"?"FY "+p+"-"+String(p+1).slice(2):fy==="apr6"?p+"/"+String(p+1).slice(2):String(p);}
 /* The limit the app assumes when the person hasn't entered their own room. Canada uses the room from
    the CRA account (it carries forward), so there's no default there. */
 function defaultRoom(state,k,p){
@@ -78,7 +87,8 @@ function defaultRoom(state,k,p){
 }
 /* Room left in a contribution year for each tracked type: the room entered (or the standard limit),
    minus contributions logged in that year. TFSA withdrawals come back next January 1.
-   In India, PPF deposits also count toward the tax-saving total. */
+   In India, PPF deposits also count toward the tax-saving total. In the UK, money paid into any ISA
+   (cash, Lifetime or stocks and shares) counts toward the £20,000 allowance. */
 function room(state,p){
   var out={},R=state.room||{};
   COUNTRY[country(state)].track.forEach(function(k){
@@ -86,7 +96,7 @@ function room(state,p){
     if(start==null||start===""){start=defaultRoom(state,k,p);dflt=true;}
     if(start==null)return;
     var put=0,took=0;
-    (state.moves||[]).forEach(function(m){if((m.type!==k&&!(k==="taxsave"&&m.type==="ppf"))||period(state,m.date)!==p)return;if(m.kind==="in")put+=n(m.amount);else if(m.kind==="out")took+=n(m.amount);});
+    (state.moves||[]).forEach(function(m){if((m.type!==k&&!(k==="taxsave"&&m.type==="ppf")&&!(k==="isa"&&(m.type==="cashisa"||m.type==="lisa")))||period(state,m.date)!==p)return;if(m.kind==="in")put+=n(m.amount);else if(m.kind==="out")took+=n(m.amount);});
     out[k]={start:n(start),contributed:r2(put),withdrawn:r2(took),left:r2(n(start)-put),backJan1:k==="tfsa"?r2(took):0,standard:dflt};
   });
   return out;
@@ -98,6 +108,7 @@ function deadline(state,k,p){
   if(c==="US"&&(k==="ira"||k==="hsa"))return taxDay(p+1);
   if(c==="US"&&k==="k401")return p+"-12-31";
   if(c==="IN")return (p+1)+"-03-31";
+  if(c==="GB")return (p+1)+"-04-05";
   return p+"-12-31";
 }
 function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
@@ -120,12 +131,12 @@ var COLS={sym:/^(symbol|ticker|security symbol|stock symbol|code|instrument|trad
   units:/^(quantity|qty|qty\.|shares|units|position|quantity held|quantity available|balance units)$/i,cost:/^(book value|book cost|total cost|cost basis|book value \(cad\)|book value \(cdn\)|average cost total|total book value|cost|invested|invested value|invested amount|buy value)$/i,
   avg:/^(average cost|avg cost|average price|avg price|average cost per share|acb per share|avg\. cost|avg\. price|average buy price|avg nav|average nav)$/i,price:/^(price|market price|last price|current price|last|ltp|nav|current nav|close price|closing price)$/i,
   value:/^(market value|value|current value|market value \(cad\)|total market value|cur\. val|present value)$/i,cur:/^(currency|market currency|curr|security currency|market price currency|price currency)$/i,acct:/^(account|account number|account type|account name)$/i};
-function num(s){s=String(s==null?"":s).replace(/[$,\s]/g,"").replace(/^\((.*)\)$/,"-$1").replace(/CAD|USD|INR|Rs\.?|₹/gi,"");var v=parseFloat(s);return isFinite(v)?v:null;}
+function num(s){s=String(s==null?"":s).replace(/[$,\s]/g,"").replace(/^\((.*)\)$/,"-$1").replace(/CAD|USD|INR|GBP|Rs\.?|₹|£/gi,"");var v=parseFloat(s);return isFinite(v)?v:null;}
 /* Finds the header row and returns holdings: [{sym,name,units,cost,price,cur,acct}] plus what was understood. */
 function parseHoldings(text,defCur){defCur=CURS.indexOf(defCur)>=0?defCur:"CAD";
   var rows=csvRows(text),hi=-1,map={};
   for(var i=0;i<Math.min(rows.length,15);i++){
-    var m={};rows[i].forEach(function(h,j){var t=String(h).trim();for(var k in COLS)if(m[k]==null&&COLS[k].test(t))m[k]=j;});
+    var m={};rows[i].forEach(function(h,j){var t=String(h).trim(),t2=t.replace(/\s*\((cad|cdn|usd|gbp|gbx|inr|eur|£|\$|₹)\)\s*$/i,"");for(var k in COLS)if(m[k]==null&&(COLS[k].test(t)||COLS[k].test(t2)))m[k]=j;});
     if((m.sym!=null||m.name!=null)&&m.units!=null){hi=i;map=m;break;}
   }
   if(hi<0)return {ok:false,why:"Couldn't find columns for the symbol and quantity. Export \"holdings\" or \"positions\" from your broker as CSV."};
@@ -138,7 +149,7 @@ function parseHoldings(text,defCur){defCur=CURS.indexOf(defCur)>=0?defCur:"CAD";
     var price=num(g("price")),value=num(g("value")),cost=num(g("cost")),avg=num(g("avg"));
     if(price==null&&value!=null)price=value/units;
     if(cost==null&&avg!=null)cost=avg*units;
-    var cc=String(g("cur")||"").toUpperCase(),cur=/USD/.test(cc)?"USD":/INR/.test(cc)?"INR":/CAD|CDN/.test(cc)?"CAD":defCur;
+    var cc=String(g("cur")||"").toUpperCase(),cur=/USD/.test(cc)?"USD":/INR/.test(cc)?"INR":/GBP|GBX|£/.test(cc)?"GBP":/CAD|CDN/.test(cc)?"CAD":defCur;
     out.push({sym:sym.slice(0,20),name:name.slice(0,80),units:units,cost:cost==null?null:r2(cost),price:price==null?null:Math.round(price*10000)/10000,cur:cur,acct:String(g("acct")||"").trim().slice(0,40)});
   });
   return {ok:out.length>0,rows:out,found:Object.keys(map),why:out.length?"":"The file had the right columns but no holdings in it."};
@@ -149,6 +160,16 @@ function guessClass(sym,cur){
   if(/^(GOLDBEES|GOLDIETF|HDFCGOLD|SETFGOLD|GOLD1|AXISGOLD|SGB|GLD|IAU|CGL|MNT|PHYS|SILVERBEES)/.test(s.replace(/^(NSE|BSE):/,"").replace(/\..*$/,"")))return "gold";
   if(/^(LIQUIDBEES|LIQUIDCASE|LIQUIDETF)/.test(s.replace(/\..*$/,"")))return "cash";
   if(/^(MON100|MAFANG|MASPTOP50|HNGSNGBEES|NASDAQ100)/.test(s.replace(/\..*$/,"")))return "us";
+  var lse=s.replace(/^LSE:/,"").replace(/\.L$/,"");
+  if(/\.L$|^LSE:/.test(s)||cur==="GBP"){
+    if(/^(VWRL|VWRP|SWDA|HMWO|FWRG|VHVG|SSAC|IWRD|XDWD|ACWI|LGGG)$/.test(lse))return "global";
+    if(/^(VUSA|VUAG|CSP1|CSPX|IUSA|EQQQ|CNDX|XNAQ|SPXP|IITU|IUIT)$/.test(lse))return "us";
+    if(/^(VEVE|VFEM|EMIM|VFEG|VJPN|VERX|VEUR|IJPN|XMME)$/.test(lse))return "intl";
+    if(/^(IGLT|VGOV|SLXX|VAGP|IGLS|INXG|AGBP|VECP|IBTS|GLTS)$/.test(lse))return "bond";
+    if(/^(SGLN|IGLN|PHGP|SGLD)$/.test(lse))return "gold";
+    if(/^(CSH2|XSTR|ERNS)$/.test(lse))return "cash";
+    return "uk";
+  }
   if(/\.(NS|BO)$|^(NSE|BSE):|^INF[A-Z0-9]{9}$|^\d{6}$/.test(s)||cur==="INR")return "in";
   if(/BTC|ETH|SOL|DOGE|-USD$/.test(s)&&!/\.(TO|V|NE)$/.test(s))return "crypto";
   if(/^(XBB|ZAG|VAB|ZDB|XSB|ZFL|VSB|BND|AGG|TLT|IEF|SHY)/.test(s.replace(/\..*$/,"")))return "bond";
@@ -196,10 +217,12 @@ function snap(state,day){var t=totals(state),last=state.snaps[state.snaps.length
    matches here, so what someone holds never leaves the phone. */
 function candidates(sym,cur,cls){
   var s=String(sym||"").trim().toUpperCase().replace(/\s+/g,"");if(!s)return [];
+  var lp=/^LSE:(.+)$/.exec(s);if(lp)return [lp[1].replace(/\./g,"-")+".L"];
   var pre=/^(NSE|BSE):(.+)$/.exec(s);if(pre)return pre[1]==="NSE"?[pre[2]+".NS",pre[2]+".BO"]:[pre[2]+".BO",pre[2]+".NS"];
-  var m=/^(.+?)[.:-](TO|TSX|NE|NEO|V|TSXV|CN|CSE|US|U|NS|NSE|BO|BSE)$/.exec(s),base=m?m[1]:s,ex=m?m[2]:"";
+  var m=/^(.+?)[.:-](TO|TSX|NE|NEO|V|TSXV|CN|CSE|US|U|NS|NSE|BO|BSE|L|LSE|LN)$/.exec(s),base=m?m[1]:s,ex=m?m[2]:"";
   var b=base.replace(/\./g,"-");
-  if(cls==="crypto"||/^(BTC|ETH|SOL|LTC|DOGE|XRP|ADA)$/.test(b))return cur==="USD"?[b+"-USD",b+"-CAD"]:cur==="INR"?[b+"-INR"]:[b+"-CAD",b+"-USD"];
+  if(cls==="crypto"||/^(BTC|ETH|SOL|LTC|DOGE|XRP|ADA)$/.test(b))return cur==="USD"?[b+"-USD",b+"-CAD"]:cur==="INR"?[b+"-INR"]:cur==="GBP"?[b+"-GBP",b+"-USD"]:[b+"-CAD",b+"-USD"];
+  if(ex==="L"||ex==="LSE"||ex==="LN"||cur==="GBP")return [b+".L"];
   if(ex==="NS"||ex==="NSE")return [base+".NS",base+".BO"];
   if(ex==="BO"||ex==="BSE")return [base+".BO",base+".NS"];
   if(cur==="INR")return [base+".NS",base+".BO"];
@@ -210,7 +233,7 @@ function candidates(sym,cur,cls){
   if(ex==="US"||ex==="U")return [b];
   return cur==="USD"?[b,b+".TO"]:[b+".TO",b+".NE",b];
 }
-var WANT={CAD:"C",USD:"U",INR:"I"};
+var WANT={CAD:"C",USD:"U",INR:"I",GBP:"G"};
 /* file: prices.json. funds (optional): the Indian mutual fund NAV file {d, n:{ISIN or scheme code: NAV}}. */
 function applyPrices(state,file,opt){
   opt=opt||{};var out={updated:0,matched:0,fx:false,unmatched:[]},funds=opt.funds;

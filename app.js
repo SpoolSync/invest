@@ -62,7 +62,7 @@ function spark(){
 }
 function overview(){
   var t=I.totals(S),h=header("Investments","Overview");
-  if(!S.accounts.length)return h+'<div class="empty"><p>Add your accounts ('+esc(C()==="US"?"401(k), IRA, Roth IRA, HSA, brokerage, savings":C()==="IN"?"demat, mutual funds, PPF, EPF, NPS, fixed deposits":"TFSA, RRSP, FHSA, non-registered, savings")+') and what you hold in them. Bring in a CSV from your broker, or type them in.</p><p class="note">Not in '+esc(PC.info(C()).name)+'? Change the country in <button class="add" data-act="settings">Settings</button>.</p><div class="row"><button class="btn p" data-act="newacct">Add an account</button></div>'+
+  if(!S.accounts.length)return h+'<div class="empty"><p>Add your accounts ('+esc(C()==="US"?"401(k), IRA, Roth IRA, HSA, brokerage, savings":C()==="GB"?"Stocks & Shares ISA, Cash ISA, Lifetime ISA, SIPP, workplace pension, GIA":C()==="IN"?"demat, mutual funds, PPF, EPF, NPS, fixed deposits":"TFSA, RRSP, FHSA, non-registered, savings")+') and what you hold in them. Bring in a CSV from your broker, or type them in.</p><p class="note">Not in '+esc(PC.info(C()).name)+'? Change the country in <button class="add" data-act="settings">Settings</button>.</p><div class="row"><button class="btn p" data-act="newacct">Add an account</button></div>'+
     '<p class="note">Nothing here is connected to your broker or bank. It only knows what you enter, and it\'s encrypted before it leaves this phone.</p></div>';
   h+='<section class="card"><p class="eyebrow">Total value</p><p class="big">'+money(t.value)+'</p>'+
     '<p class="'+(t.gain>=0?"pos":"neg")+'" style="font-weight:600">'+(t.gain>=0?"+":"")+money(t.gain)+' ('+pct(t.gainPct)+') vs what you paid</p>'+spark()+
@@ -97,7 +97,7 @@ function targetCard(){
   h+='<p class="note">'+(r.maxDrift<=5?"Within 5 points of your targets everywhere.":"Off by up to "+Math.round(r.maxDrift)+" points.")+'</p>';
   r.rows.forEach(function(x){var off=x.drift;
     h+='<div class="ln"><span>'+esc(CLS[x.cls]||x.cls)+'</span><span class="lead"></span><span class="v">'+Math.round(x.nowPct)+'% now · '+Math.round(x.target)+'% target'+(Math.abs(off)>=1?' <b class="'+(Math.abs(off)>5?"neg":"")+'">('+(off>0?"+":"")+off+')</b>':"")+'</span></div>';});
-  h+='<div class="row" style="margin-top:8px"><label class="note" for="addcash">Adding</label><input type="text" inputmode="decimal" id="addcash" value="'+esc(addCash)+'" placeholder="'+esc(C()==="IN"?"₹10,000":"$500")+'" style="width:110px"><span class="note">to put it where it brings you closest</span></div>';
+  h+='<div class="row" style="margin-top:8px"><label class="note" for="addcash">Adding</label><input type="text" inputmode="decimal" id="addcash" value="'+esc(addCash)+'" placeholder="'+esc(C()==="IN"?"₹10,000":C()==="GB"?"£500":"$500")+'" style="width:110px"><span class="note">to put it where it brings you closest</span></div>';
   if(r.cash>0){h+='<div id="split">';r.rows.filter(function(x){return x.buy>=1;}).forEach(function(x){h+='<div class="ln"><span>'+esc(CLS[x.cls]||x.cls)+(x.example?' <span class="note">(like '+esc(x.example)+')</span>':"")+'</span><span class="lead"></span><span class="v pos">'+money(x.buy)+'</span></div>';});h+='</div>';}
   return h+'<p class="note">This is arithmetic on your own targets, not advice. Mind each account\'s contribution room.</p></section>';
 }
@@ -122,6 +122,10 @@ function accounts(){
 }
 /* What each tracked limit means, per country. Figures checked November 2026; the person's own room wins. */
 var ROOMTXT={
+  isa:{set:"Normally £20,000 a tax year across all your ISAs.",std:"£20,000 a tax year (6 April to 5 April), shared by all your ISAs: stocks and shares, cash, Lifetime and innovative finance. Transfers between ISAs don't count.",over:"Paying in over £20,000 isn't allowed; HMRC can ask the provider to remove the excess."},
+  cashisa:{set:"Normally £20,000 until April 2027, then £12,000 if you're under 65.",std:"Cash ISAs share the £20,000 allowance. From 6 April 2027, under-65s can put at most £12,000 a year into cash ISAs.",over:"Over the cash ISA limit; the provider should refuse it."},
+  lisa:{set:"Normally £4,000.",std:"£4,000 a tax year, part of the £20,000. The government adds 25% (up to £1,000). Open it between 18 and 39.",over:"Lifetime ISA payments above £4,000 aren't allowed."},
+  pension:{set:"Your own allowance, if it's tapered (high incomes) or you're carrying forward unused allowance from the last 3 years.",std:"£60,000 a tax year (or 100% of earnings if lower), counting your payments, your employer's and the tax relief.",over:"Pension savings over the annual allowance are taxed as income unless you can carry forward."},
   tfsa:{set:"From your CRA account. It includes this year's $7,000 and any unused room from past years.",none:"2026 adds $7,000.",over:"Over-contributions are taxed 1% a month until withdrawn. Check your CRA account."},
   rrsp:{set:"Your RRSP deduction limit from your latest Notice of Assessment or CRA account.",none:"2026 adds 18% of your 2025 earned income, up to $33,810.",over:"Over-contributions above the $2,000 buffer are taxed 1% a month. Check your CRA account."},
   fhsa:{set:"From your CRA account: this year's $8,000 plus any carried-forward room.",none:"$8,000 a year after you open one, $40,000 lifetime.",over:"Over-contributions are taxed 1% a month until withdrawn."},
@@ -135,34 +139,36 @@ function roomView(){
   var c=C(),p=pnow(),r=I.room(S,p),dv=I.dividends(S,year()),h=header("Investments","Room & income");
   var intro=c==="CA"?"Enter the room your CRA account (My Account) shows for January 1, "+p+". Then log each contribution and withdrawal here and the app keeps count. The CRA's own figure can lag behind recent activity.":
     c==="US"?"The app starts from the IRS limits for "+p+". Log each contribution (not your employer's match) and it keeps count. Change a limit if catch-up contributions apply to you.":
+    c==="GB"?"The UK tax year runs 6 April to 5 April. Log what goes into each ISA and your pension and the app keeps count against the allowances. Money into a Cash or Lifetime ISA also counts toward the £20,000.":
     "India's contribution year is the financial year, April to March. Log each deposit and the app keeps count against the limits.";
   h+='<section class="card"><h2>Contribution room, '+esc(I.periodLabel(S,p))+'</h2><p class="note">'+esc(intro)+'</p>';
   CP().track.forEach(function(k){
     var x=r[k],T=ROOMTXT[k];
     h+='<div style="border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px"><div class="dayhead"><h3>'+esc(I.TRACK_LABEL[k])+'</h3><button class="btn q s" data-act="setroom" data-k="'+k+'">'+(x&&!x.standard?"Change":c==="CA"?"Set room":"Use my own limit")+'</button></div>';
     if(x){
-      h+=ln(c==="CA"?"Room on Jan 1":"Limit",money(x.start))+ln(c==="IN"&&k==="taxsave"?"Counted so far":"Contributed",money(x.contributed))+ln("Left",money(x.left),x.left<0?"neg":"");
+      h+=ln(c==="CA"?"Room on Jan 1":c==="GB"?"Allowance":"Limit",money(x.start))+ln(c==="IN"&&k==="taxsave"?"Counted so far":"Contributed",money(x.contributed))+ln("Left",money(x.left),x.left<0?"neg":"");
       if(x.left<0)h+='<p class="small neg" style="font-weight:600">That\'s '+money(-x.left)+' over. '+esc(T.over)+'</p>';
       if(x.standard&&T.std)h+='<p class="note">'+esc(T.std)+'</p>';
       var dl=I.deadline(S,k,p);
-      if(k==="rrsp"||c!=="CA")h+='<p class="note">'+(c==="US"&&k==="k401"?"Payroll contributions for "+p+" must come out of a paycheck by "+esc(day(dl,{month:"long",day:"numeric",year:"numeric"}))+".":"Contributions until "+esc(day(dl,{month:"long",day:"numeric",year:"numeric"}))+" count toward "+esc(I.periodLabel(S,p))+(c==="CA"?"'s tax return":"")+".")+'</p>';
+      if(k==="rrsp"||c!=="CA")h+='<p class="note">'+(c==="US"&&k==="k401"?"Payroll contributions for "+p+" must come out of a paycheck by "+esc(day(dl,{month:"long",day:"numeric",year:"numeric"}))+".":"Contributions until "+esc(day(dl,{month:"long",day:"numeric",year:"numeric"}))+" count toward "+esc(I.periodLabel(S,p))+(c==="CA"?"'s tax return":c==="GB"?" (the tax year ends that day)":"")+".")+'</p>';
       if(k==="tfsa"&&x.withdrawn)h+='<p class="note">'+money(x.backJan1)+' withdrawn this year comes back as room on January 1, '+(p+1)+'.</p>';
       if(k==="hsa")h+='<label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-act="hsafamily"'+(S.hsaFamily?" checked":"")+'> Family coverage ($8,750 for 2026, $9,000 for 2027)</label>';
     }else h+='<p class="note">'+esc(T.none||T.std)+'</p>';
     h+='</div>';
   });
+  if(c==="GB"&&p<2027){h+='<p class="note">From 6 April 2027, the cash ISA limit drops to £12,000 for under-65s; the overall £20,000 stays.</p>';}
   if(c==="US"&&p===year()){var nx=I.room(S,p+1);h+='<p class="note">'+(p+1)+' limits: 401(k) '+money(nx.k401.start)+', IRA '+money(nx.ira.start)+', HSA '+money(nx.hsa.start)+'.</p>';}
   h+='<div class="row"><button class="btn p s" data-act="newmove">Log a contribution or withdrawal</button></div>';
   var mv=S.moves.filter(function(m){return I.period(S,m.date)===p;}).sort(function(a,b){return b.date.localeCompare(a.date);});
   mv.slice(0,30).forEach(function(m){h+='<div class="hold" data-act="delmove" data-id="'+m.id+'"><span>'+esc(I.TRACK_LABEL[m.type]||TYPE[m.type])+' · '+(m.kind==="in"?"contribution":"withdrawal")+'<br><span class="note">'+esc(day(m.date))+(m.note?" · "+esc(m.note):"")+' · tap to remove</span></span><span class="v '+(m.kind==="in"?"":"neg")+'">'+(m.kind==="in"?"":"−")+money(m.amount)+'</span></div>';});
   h+='</section><section class="card"><div class="dayhead"><h2>Dividends, '+year()+'</h2><button class="btn q s" data-act="newdiv">Log a dividend</button></div>'+ln("Total",money(dv.total));
   Object.keys(dv.by).sort(function(a,b){return dv.by[b]-dv.by[a];}).forEach(function(k){h+=ln(k,money(dv.by[k]));});
-  return h+'</section><p class="note">'+(c==="CA"?"Limits used: TFSA $7,000 for 2026; RRSP 18% of earned income up to $33,810 for 2026; FHSA $8,000 a year, $40,000 lifetime.":c==="US"?"Limits from the IRS, checked November 2026.":"Limits checked November 2026. Which tax regime suits you depends on your income and deductions.")+' This is a tracker, not tax advice.</p>';
+  return h+'</section><p class="note">'+(c==="CA"?"Limits used: TFSA $7,000 for 2026; RRSP 18% of earned income up to $33,810 for 2026; FHSA $8,000 a year, $40,000 lifetime.":c==="US"?"Limits from the IRS, checked November 2026.":c==="GB"?"Allowances from HMRC, checked November 2026. Cash ISA £12,000 from April 2027 applies to under-65s; check your pension allowance if your income is over £200,000.":"Limits checked November 2026. Which tax regime suits you depends on your income and deductions.")+' This is a tracker, not tax advice.</p>';
 }
 function settings(){
   var h='<button class="btn q s" data-act="tab" data-t="overview" style="align-self:flex-start">← Back</button><h1>Settings</h1>';
   h+=PC.picker("Sets your home currency, account types and contribution limits here, and the country-specific parts of every Pixora app.");
-  h+='<section class="card"><h2>Automatic prices</h2><p class="note">Each weekday evening Pixora saves closing prices for popular Canadian, US and Indian (NSE) stocks and ETFs, crypto, and every Indian mutual fund\'s NAV in public files. Your phone downloads the whole file and matches your holdings itself, so nobody, not even Pixora, learns what you own. Holdings it can\'t match keep the price you type.</p>'+
+  h+='<section class="card"><h2>Automatic prices</h2><p class="note">Each weekday evening Pixora saves closing prices for popular Canadian, US, UK (London) and Indian (NSE) stocks and ETFs, crypto, and every Indian mutual fund\'s NAV in public files. Your phone downloads the whole file and matches your holdings itself, so nobody, not even Pixora, learns what you own. Holdings it can\'t match keep the price you type.</p>'+
     '<label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-act="autoprices"'+(S.autoPrices?" checked":"")+'> Update prices and exchange rates automatically</label></section>';
   h+='<section class="card"><h2>Exchange rates</h2><p class="note">Holdings in other currencies are shown in '+home()+'. Now: '+esc(rateNote())+'.</p>'+
     (home()==="CAD"?'<div class="row"><input type="text" inputmode="decimal" id="usd" value="'+S.usdcad+'" style="width:120px"><span class="note">CAD per 1 USD</span><button class="btn q s" data-act="saveusd">Save</button></div>':"")+'</section>';
@@ -178,11 +184,11 @@ function settings(){
 function dlg(html){var d=$("#dlg");d.innerHTML='<div class="form">'+html+'</div>';if(!d.open)d.showModal();return d;}
 function closeDlg(){var d=$("#dlg");if(d.open)d.close();d.innerHTML="";}
 $("#dlg").addEventListener("cancel",function(e){e.preventDefault();closeDlg();});
-function curOpts(sel){var list=[home()].concat(["CAD","USD","INR"].filter(function(x){return x!==home();}));if(sel&&list.indexOf(sel)<0)list.push(sel);return opts(list.map(function(x){return [x,x];}),sel||home());}
+function curOpts(sel){var list=[home()].concat(["CAD","USD","GBP","INR"].filter(function(x){return x!==home();}));if(sel&&list.indexOf(sel)<0)list.push(sel);return opts(list.map(function(x){return [x,x];}),sel||home());}
 function opts(list,sel){return list.map(function(x){return '<option value="'+x[0]+'"'+(x[0]===sel?" selected":"")+'>'+esc(x[1])+'</option>';}).join("");}
 function acctDialog(a){
   var isNew=!a;a=a||{id:rid(),name:"",type:CP().def,inst:"",cur:home(),cashBal:0,holdings:[]};
-  var c=C(),ex=c==="US"?["Fidelity Roth IRA","Fidelity, Vanguard, Schwab"]:c==="IN"?["Zerodha demat","Zerodha, Groww, SBI, HDFC Bank"]:["Wealthsimple TFSA","Questrade, TD, EQ Bank"];
+  var c=C(),ex=c==="US"?["Fidelity Roth IRA","Fidelity, Vanguard, Schwab"]:c==="GB"?["Vanguard Stocks & Shares ISA","Vanguard, Hargreaves Lansdown, AJ Bell, Trading 212"]:c==="IN"?["Zerodha demat","Zerodha, Groww, SBI, HDFC Bank"]:["Wealthsimple TFSA","Questrade, TD, EQ Bank"];
   dlg('<h2>'+(isNew?"Add an account":"Edit account")+'</h2><label class="f">Name<input type="text" id="a-name" maxlength="60" value="'+esc(a.name)+'" placeholder="'+esc(ex[0])+'"></label>'+
     '<div class="two"><label class="f">Type<select id="a-type">'+opts(I.TYPES.filter(function(t){return CP().types.indexOf(t[0])>=0||t[0]===a.type;}),a.type)+'</select></label><label class="f">Currency<select id="a-cur">'+curOpts(a.cur)+'</select></label></div>'+
     '<div class="two"><label class="f">Where<input type="text" id="a-inst" maxlength="40" value="'+esc(a.inst)+'" placeholder="'+esc(ex[1])+'"></label><label class="f">Cash in it<input type="text" inputmode="decimal" id="a-cash" value="'+(a.cashBal||"")+'"></label></div>'+
@@ -191,13 +197,14 @@ function acctDialog(a){
 }
 function holdDialog(a,x){
   var isNew=!x;x=x||{id:rid(),sym:"",name:"",units:"",cost:"",price:"",cur:a.cur,cls:""};
-  var c=C(),ph=c==="US"?"VTI":c==="IN"?"RELIANCE":"XEQT.TO";
+  var c=C(),ph=c==="US"?"VTI":c==="GB"?"VWRP":c==="IN"?"RELIANCE":"XEQT.TO";
   dlg('<h2>'+(isNew?"Add a holding":"Edit holding")+'</h2><p class="note">'+esc(a.name)+'</p>'+
     (c==="IN"?'<label class="f">Find a mutual fund<input type="search" id="h-fund" placeholder="e.g. parag parikh flexi cap direct" autocomplete="off"></label><div id="h-fundres"></div>':"")+
     '<div class="two"><label class="f">Symbol'+(c==="IN"?" or fund ISIN":"")+'<input type="text" id="h-sym" maxlength="20" value="'+esc(x.sym)+'" placeholder="'+ph+'" autocapitalize="characters"></label><label class="f">Name<input type="text" id="h-name" maxlength="80" value="'+esc(x.name)+'"></label></div>'+
     '<div class="two"><label class="f">Units<input type="text" inputmode="decimal" id="h-units" value="'+x.units+'"></label><label class="f">Total paid, in '+home()+'<input type="text" inputmode="decimal" id="h-cost" value="'+(x.cost&&x.costCur&&x.costCur!==home()?Math.round(x.cost*I.rate(S,x.costCur)*100)/100:x.cost)+'"></label></div>'+
     '<div class="two"><label class="f">Price now'+(c==="IN"?" (or NAV)":"")+'<input type="text" inputmode="decimal" id="h-price" value="'+x.price+'"></label><label class="f">Currency<select id="h-cur">'+curOpts(x.cur)+'</select></label></div>'+
     '<label class="f">Kind<select id="h-cls"><option value="">Guess from the symbol</option>'+opts(I.CLASSES.filter(function(k){return CP().classes.indexOf(k[0])>=0||k[0]===x.cls;}),x.cls)+'</select></label>'+
+    (c==="GB"?'<p class="note">London Stock Exchange symbols (VWRP, SHEL, ISF) get prices automatically, converted from pence to pounds. Funds without a ticker (OEICs) need the price typed in.</p>':"")+
     (c==="IN"?'<p class="note">NSE symbols get prices automatically (add .BO for BSE). Mutual funds get the daily NAV when the symbol is the fund\'s ISIN or AMFI scheme code.</p>':"")+
     '<div class="row"><button class="btn p" data-act="savehold" data-a="'+a.id+'" data-id="'+x.id+'" data-new="'+(isNew?1:0)+'">Save</button><button class="btn q" data-act="close">Cancel</button>'+(isNew?"":'<button class="btn d" data-act="delhold" data-a="'+a.id+'" data-id="'+x.id+'">Delete</button>')+'</div>');
 }
@@ -210,7 +217,7 @@ function pricesDialog(){
     '<div class="row"><button class="btn p" data-act="saveprices">Save prices</button><button class="btn q" data-act="close">Cancel</button></div>');
 }
 function importDialog(){
-  dlg('<h2>Import from your broker</h2><p class="note">In your broker\'s website, export holdings or positions as CSV ('+esc(C()==="US"?"Fidelity, Vanguard, Schwab, Robinhood":C()==="IN"?"Zerodha Console, Groww, Upstox, ICICI Direct":"Wealthsimple, Questrade, TD, RBC, CIBC, BMO")+' and most others can). The file is read on this phone only.</p>'+
+  dlg('<h2>Import from your broker</h2><p class="note">In your broker\'s website, export holdings or positions as CSV ('+esc(C()==="US"?"Fidelity, Vanguard, Schwab, Robinhood":C()==="GB"?"Vanguard, Hargreaves Lansdown, AJ Bell, Trading 212, Freetrade":C()==="IN"?"Zerodha Console, Groww, Upstox, ICICI Direct":"Wealthsimple, Questrade, TD, RBC, CIBC, BMO")+' and most others can). The file is read on this phone only.</p>'+
     '<input type="file" id="i-file" accept=".csv,text/csv,text/plain"><label class="f">Or paste it<textarea id="i-text" placeholder="Symbol,Quantity,Book value,Market price…"></textarea></label>'+
     '<div class="row"><button class="btn p" data-act="readcsv">Read it</button><button class="btn q" data-act="close">Cancel</button></div><div id="i-out"></div>');
   $("#i-file").addEventListener("change",function(){var f=this.files[0];if(!f)return;var r=new FileReader();r.onload=function(){$("#i-text").value=String(r.result);};r.readAsText(f);});
@@ -275,7 +282,7 @@ document.addEventListener("click",async function(e){
   else if(a==="readcsv")showImport(I.parseHoldings($("#i-text").value,home()));
   else if(a==="doimport"){
     var to=$("#i-acct").value,ac4=to==="_new"?null:acct(to);
-    if(!ac4){var an=importRows[0].acct||"",gt=/tfsa/i.test(an)?"tfsa":/rrsp/i.test(an)?"rrsp":/fhsa/i.test(an)?"fhsa":/roth/i.test(an)?"roth":/ira/i.test(an)?"ira":/401/i.test(an)?"k401":/hsa/i.test(an)?"hsa":C()==="IN"?(importRows.every(function(r){return I.isFund(r.sym);})?"mf":"demat"):C()==="US"?"brokerage":"nonreg";
+    if(!ac4){var an=importRows[0].acct||"",gt=/tfsa/i.test(an)?"tfsa":/rrsp/i.test(an)?"rrsp":/fhsa/i.test(an)?"fhsa":/roth/i.test(an)?"roth":/ira/i.test(an)?"ira":/401/i.test(an)?"k401":/hsa/i.test(an)?"hsa":/lifetime|lisa/i.test(an)?"lisa":/cash isa/i.test(an)?"cashisa":/isa/i.test(an)?"isa":/sipp/i.test(an)?"sipp":C()==="GB"?"gia":C()==="IN"?(importRows.every(function(r){return I.isFund(r.sym);})?"mf":"demat"):C()==="US"?"brokerage":"nonreg";
       ac4={id:rid(),name:an||"Imported account",type:gt,inst:"",cur:home(),cashBal:0,holdings:[]};S.accounts.push(ac4);}
     if($("#i-replace").checked)ac4.holdings=[];
     importRows.forEach(function(r){

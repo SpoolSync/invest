@@ -2,7 +2,7 @@
 """Daily closing prices for Pixora Investments.
 
 Writes prices.json: {"d": close date, "at": when fetched, "fx": {"USDCAD": rate},
-"p": {"XEQT.TO": [price, "C"|"U"|"I"], ...}} (CAD, USD or INR).
+"p": {"XEQT.TO": [price, "C"|"U"|"I"|"G"], ...}} (CAD, USD, INR or GBP; London pence become pounds).
 Also writes funds-in.json (every Indian mutual fund's latest NAV, by ISIN and AMFI scheme code) and
 funds-in-names.json (names for searching), from AMFI's public daily file. The app downloads the whole file and matches holdings on the
 phone, so nobody learns what anyone holds. Public market data only. Runs on GitHub Actions (see
@@ -45,7 +45,9 @@ def quote(sym):
     j = json.loads(get("https://query1.finance.yahoo.com/v8/finance/chart/%s?range=5d&interval=1d" % urllib.request.quote(sym)))
     m = j["chart"]["result"][0]["meta"]
     p, cur, t = m.get("regularMarketPrice"), m.get("currency"), m.get("regularMarketTime")
-    code = {"CAD": "C", "USD": "U", "INR": "I"}.get(cur)
+    # London prices are usually quoted in pence ("GBp"); store pounds.
+    if cur in ("GBp", "GBX") and p: p, cur = float(p) / 100, "GBP"
+    code = {"CAD": "C", "USD": "U", "INR": "I", "GBP": "G"}.get(cur)
     if not p or not code: return None
     return round(float(p), 4), code, t
 

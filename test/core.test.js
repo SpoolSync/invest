@@ -99,5 +99,22 @@ t("switching country keeps purchase costs right",function(){
   var s=I.clean({country:"IN",fxc:{INR:0.016},usdcad:1.4,accounts:[{id:"a",name:"x",type:"demat",holdings:[{id:"h",sym:"TCS",units:1,price:1000,cost:800,costCur:"INR"}]}]});
   assert.strictEqual(I.totals(s).gain,200);s.country="US";var t=I.totals(s);assert.strictEqual(t.value,Math.round(1000*0.016/1.4*100)/100);assert.strictEqual(t.gain,Math.round(200*0.016/1.4*100)/100);
 });
+t("UK: pounds, 6 April tax year, all ISAs share £20,000, cash ISA £12,000 from 2027",function(){
+  var s=I.clean({country:"GB",accounts:[{id:"a",name:"Vanguard ISA",type:"isa",holdings:[{id:"h",sym:"VWRP",units:100,price:120,cost:10000,costCur:"GBP"}]}],
+    moves:[{id:"1",date:"2026-04-05",type:"isa",kind:"in",amount:5000},{id:"2",date:"2026-04-06",type:"isa",kind:"in",amount:8000},{id:"3",date:"2026-05-01",type:"cashisa",kind:"in",amount:3000},{id:"4",date:"2026-06-01",type:"lisa",kind:"in",amount:4000},{id:"5",date:"2026-07-01",type:"pension",kind:"in",amount:10000}]});
+  assert.strictEqual(I.base(s),"GBP");assert.strictEqual(s.accounts[0].holdings[0].cur,"GBP");assert.strictEqual(I.totals(s).gain,2000);
+  assert.strictEqual(I.period(s,"2026-04-05"),2025);assert.strictEqual(I.period(s,"2026-04-06"),2026);assert.strictEqual(I.periodLabel(s,2026),"2026/27");
+  var r=I.room(s,2026);assert.strictEqual(r.isa.contributed,15000);assert.strictEqual(r.isa.left,5000);assert.strictEqual(r.lisa.left,0);assert.strictEqual(r.cashisa.left,17000);assert.strictEqual(r.pension.left,50000);
+  assert.strictEqual(I.room(s,2027).cashisa.start,12000);assert.strictEqual(I.room(s,2025).isa.contributed,5000);
+  assert.strictEqual(I.deadline(s,"isa",2026),"2027-04-05");
+});
+t("UK: London prices, classes and pounds conversion",function(){
+  assert.deepStrictEqual(I.candidates("VWRP","GBP"),["VWRP.L"]);assert.deepStrictEqual(I.candidates("BT.A","GBP"),["BT-A.L"]);assert.deepStrictEqual(I.candidates("CSPX.L","USD"),["CSPX.L"]);assert.deepStrictEqual(I.candidates("LSE:SHEL","GBP"),["SHEL.L"]);
+  assert.strictEqual(I.guessClass("VWRP","GBP"),"global");assert.strictEqual(I.guessClass("SHEL.L","GBP"),"uk");assert.strictEqual(I.guessClass("IGLT","GBP"),"bond");assert.strictEqual(I.guessClass("VUAG.L","GBP"),"us");
+  var s=I.clean({country:"GB",usdcad:1.4,accounts:[{id:"a",name:"x",type:"gia",holdings:[{id:"1",sym:"SHEL",units:10,price:1},{id:"2",sym:"AAPL",cur:"USD",units:1,price:1}]}]});
+  I.applyPrices(s,{d:"2026-11-24",p:{"SHEL.L":[27.5,"G"],"AAPL":[230,"U"]},fx:{USDCAD:1.4,CAD:{GBP:1.82,USD:1.4}}});
+  assert.strictEqual(s.accounts[0].holdings[0].price,27.5);assert.strictEqual(Math.round(I.totals(s).value*100)/100,Math.round((275+230*1.4/1.82)*100)/100);
+  var p=I.parseHoldings("Ticker,Quantity,Price (GBP),Value (GBP)\nVWRP,10,120.5,1205\n","GBP");assert.strictEqual(p.rows[0].cur,"GBP");assert.strictEqual(p.rows[0].price,120.5);
+});
 t("old Canadian data still reads the same",function(){var s=I.clean({usdcad:1.38,accounts:[{id:"a",name:"T",type:"tfsa",cur:"CAD",holdings:[{id:"h",sym:"AAPL",units:1,price:100,cur:"USD"}]}]});assert.strictEqual(I.base(s),"CAD");assert.strictEqual(I.totals(s).value,138);});
 console.log(n+" tests passed");
