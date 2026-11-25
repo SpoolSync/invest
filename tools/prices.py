@@ -53,7 +53,14 @@ FUNDS = os.path.join(HERE, "..", "funds-in.json")
 NAMES = os.path.join(HERE, "..", "funds-in-names.json")
 def funds():
     """AMFI's NAVAll.txt: Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;NAV;Date"""
-    raw = get("https://www.amfiindia.com/spages/NAVAll.txt").decode("utf-8", "replace")
+    raw = ""
+    for url in ("https://portal.amfiindia.com/spages/NAVAll.txt", "https://www.amfiindia.com/spages/NAVAll.txt"):
+        try:
+            raw = get(url).decode("utf-8", "replace")
+            if raw.count(";") > 5000: break
+            print("AMFI", url, "gave", len(raw), "bytes, not the NAV list", file=sys.stderr)
+        except Exception as e:
+            print("AMFI", url, "failed:", e, file=sys.stderr)
     nav, names, latest = {}, [], ""
     for line in raw.splitlines():
         p = line.split(";")
