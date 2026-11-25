@@ -347,7 +347,10 @@ async function fundSearch(q){
   var my=++fundQ;
   if(!fundNames){box.innerHTML='<p class="note">Loading the fund list…</p>';try{var r=await fetch("funds-in-names.json");fundNames=(await r.json()).f;}catch(e){box.innerHTML='<p class="note">Couldn\'t load the fund list. Type the ISIN instead.</p>';return;}}
   if(my!==fundQ)return;
-  var w=q.split(/\s+/),hits=[];for(var i=0;i<fundNames.length&&hits.length<8;i++){var nm=fundNames[i][1].toLowerCase();if(w.every(function(x){return nm.indexOf(x)>=0;}))hits.push(fundNames[i]);}
+  function find(w){var hits=[];for(var i=0;i<fundNames.length&&hits.length<8;i++){var nm=fundNames[i][1].toLowerCase();if(w.every(function(x){return nm.indexOf(x)>=0;}))hits.push(fundNames[i]);}return hits;}
+  var w=q.split(/\s+/),hits=find(w);
+  if(!hits.length){var core=w.filter(function(x){return !/^(plan|fund|option|scheme|the|of|-)$/.test(x);});if(core.length)hits=find(core);}
+  if(!hits.length){var core2=w.filter(function(x){return !/^(plan|fund|option|scheme|the|of|-|direct|regular|growth|idcw|dividend)$/.test(x);});if(core2.length)hits=find(core2);}
   box.innerHTML=hits.length?hits.map(function(f){return '<button class="add" style="display:block;text-align:left;padding:6px 0" data-act="pickfund" data-sym="'+esc(f[0])+'" data-name="'+esc(f[1])+'">'+esc(f[1])+'</button>';}).join(""):'<p class="note">No fund matches. Try fewer words.</p>';
 }
 document.addEventListener("input",function(e){
