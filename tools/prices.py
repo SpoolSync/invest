@@ -57,27 +57,46 @@ def funds():
     for url in ("https://portal.amfiindia.com/spages/NAVAll.txt", "https://www.amfiindia.com/spages/NAVAll.txt"):
         try:
             raw = get(url).decode("utf-8", "replace")
-            if raw.count(";") > 5000: break
+            if max(raw.count(";"), raw.count("|"), raw.count(",")) > 5000: break
             print("AMFI", url, "gave", len(raw), "bytes, not the NAV list", file=sys.stderr)
         except Exception as e:
             print("AMFI", url, "failed:", e, file=sys.stderr)
     nav, names, latest = {}, [], ""
+    # Read each line by the shape of its parts, not their position, so a column change at AMFI
+    # doesn't break it: ISINs start with INF, the scheme code is the leading number, the date is a date,
+    # the NAV is the number that isn't the code, and the name is the longest text.
+    def as_date(t):
+        for f in ("%d-%b-%Y", "%d-%B-%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d %b %Y"):
+            try: return datetime.datetime.strptime(t, f).date().isoformat()
+            except ValueError: pass
+        return None
+    shown = 0
     for line in raw.splitlines():
-        p = line.split(";")
-        if len(p) < 6 or not p[0].strip().isdigit(): continue
-        code, isin1, isin2, name, v, d = [x.strip() for x in p[:6]]
-        try: v = round(float(v), 4)
-        except ValueError: continue
-        if v <= 0: continue
-        try: d = datetime.datetime.strptime(d, "%d-%b-%Y").date().isoformat()
-        except ValueError: continue
+        sep = ";" if line.count(";") >= 3 else ("|" if line.count("|") >= 3 else ("," if line.count(",") >= 3 else None))
+        if not sep: continue
+        p = [x.strip().strip('"') for x in line.split(sep)]
+        isins = [x for x in p if len(x) == 12 and x.startswith("INF")]
+        d = next((as_date(x) for x in p if as_date(x)), None)
+        code = next((x for x in p if x.isdigit() and 4 <= len(x) <= 7), None)
+        v = None
+        for x in p:
+            if x == code or x in isins: continue
+            try:
+                f = float(x.replace(",", ""))
+                if f > 0 and not x.isdigit() or (f > 0 and x.isdigit() and x != code and len(x) < 4): v = round(f, 4); break
+            except ValueError: pass
+        texts = [x for x in p if x not in isins and x != code and not as_date(x) and not x.replace(".", "", 1).replace(",", "").isdigit() and x not in ("-", "")]
+        name = max(texts, key=len) if texts else ""
+        if shown < 3 and (isins or code):
+            print("AMFI sample:", line[:160]); shown += 1
+        if not d or v is None or not (isins or code) or not name: continue
         if d > latest: latest = d
-        nav[code] = v
-        for i in (isin1, isin2):
-            if len(i) == 12 and i.startswith("INF"): nav[i] = v
-        key = isin1 if len(isin1) == 12 and isin1.startswith("INF") else (isin2 if len(isin2) == 12 and isin2.startswith("INF") else code)
-        names.append([key, name])
-    if len(names) < 1000: raise RuntimeError("only %d funds" % len(names))
+        if code: nav[code] = v
+        for i2 in isins: nav[i2] = v
+        names.append([isins[0] if isins else code, name])
+    if len(names) < 1000:
+        print("AMFI file start:", repr(raw[:600]), file=sys.stderr)
+        raise RuntimeError("only %d funds" % len(names))
     names.sort(key=lambda x: x[1].lower())
     with open(FUNDS, "w") as f: json.dump({"d": latest, "n": nav}, f, separators=(",", ":"))
     with open(NAMES, "w") as f: json.dump({"d": latest, "f": names}, f, separators=(",", ":"), ensure_ascii=False)
