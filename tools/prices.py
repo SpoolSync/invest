@@ -64,7 +64,8 @@ def funds():
     nav, names, latest = {}, [], ""
     # Read each line by the shape of its parts, not their position, so a column change at AMFI
     # doesn't break it: ISINs start with INF, the scheme code is the leading number, the date is a date,
-    # the NAV is the number that isn't the code, and the name is the longest text.
+    # the NAV is the number that isn't the code, and the name is the text parts in order
+    # (scheme, plan, option).
     def as_date(t):
         for f in ("%d-%b-%Y", "%d-%B-%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d %b %Y"):
             try: return datetime.datetime.strptime(t, f).date().isoformat()
@@ -86,7 +87,7 @@ def funds():
                 if f > 0 and not x.isdigit() or (f > 0 and x.isdigit() and x != code and len(x) < 4): v = round(f, 4); break
             except ValueError: pass
         texts = [x for x in p if x not in isins and x != code and not as_date(x) and not x.replace(".", "", 1).replace(",", "").isdigit() and x not in ("-", "")]
-        name = max(texts, key=len) if texts else ""
+        name = " - ".join(texts)[:140]  # scheme, plan and option may be separate columns
         if shown < 3 and (isins or code):
             print("AMFI sample:", line[:160]); shown += 1
         if not d or v is None or not (isins or code) or not name: continue
